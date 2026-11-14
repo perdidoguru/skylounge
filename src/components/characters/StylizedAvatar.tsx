@@ -839,32 +839,34 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       {/* OVERHEAD NAME TAG & SPEECH BUBBLE */}
       {showLabel && !previewMode && (
         <Html
-          position={[0, 1.98, 0]}
+          position={[0, 1.96, 0]}
           center
           distanceFactor={9}
           zIndexRange={[10, 0]}
           style={{ pointerEvents: 'none' }}
         >
-          <div className="flex flex-col items-center gap-1.5 select-none pointer-events-none">
+          <div className="flex flex-col items-center gap-1 select-none pointer-events-none">
             {activeBubbleText && (
-              <div className="max-w-[220px] px-3 py-1.5 rounded-2xl bg-slate-900/92 border border-amber-400/40 text-xs text-slate-100 font-medium shadow-xl backdrop-blur-md animate-bounce">
+              <div className="max-w-[200px] px-2.5 py-1 rounded-xl bg-slate-950/75 border border-amber-400/30 text-[11px] text-slate-100 font-medium shadow-lg backdrop-blur-md">
                 {activeBubbleText}
               </div>
             )}
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/75 border border-white/15 backdrop-blur-sm shadow-lg whitespace-nowrap">
-              {isHost && (
-                <span className="text-[11px] text-amber-400" title="Anfitrião da Sala">
-                  👑
+            {!(isLocal && animation === 'sit') && (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950/45 border border-white/10 backdrop-blur-sm shadow-sm whitespace-nowrap opacity-75">
+                {isHost && (
+                  <span className="text-[9px] text-amber-400" title="Anfitrião da Sala">
+                    👑
+                  </span>
+                )}
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: customization.primaryColor }}
+                />
+                <span className={`text-[10px] font-medium tracking-wide ${isLocal ? 'text-amber-300/90' : 'text-slate-100/90'}`}>
+                  {customization.name}
                 </span>
-              )}
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: customization.primaryColor }}
-              />
-              <span className={`text-[11px] font-semibold tracking-wide ${isLocal ? 'text-amber-300' : 'text-white'}`}>
-                {customization.name}
-              </span>
-            </div>
+              </div>
+            )}
           </div>
         </Html>
       )}

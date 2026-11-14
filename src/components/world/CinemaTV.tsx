@@ -651,11 +651,11 @@ export const CinemaTV: React.FC = () => {
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
 
-    // Check local player distance to TV for contextual interaction prompt
+    // Check local player distance to TV for contextual interaction prompt (only when walking close to the TV console)
     const px = localPlayerTransform.position[0] - TV_POSITION[0];
     const pz = localPlayerTransform.position[2] - TV_POSITION[2];
     const distSq = px * px + pz * pz;
-    setNearTV(distSq < 85); // within ~9.2m of the TV
+    setNearTV(distSq < 18); // within ~4.2m of the TV
 
     // Animate ambient bias lighting behind the TV
     const colorA = new THREE.Color().setHSL(0.08 + Math.sin(t * 0.5) * 0.04, 0.85, 0.55);

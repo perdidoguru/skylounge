@@ -208,7 +208,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   nearTV: false,
 
   activeModal: 'none',
-  chatOpen: true,
+  chatOpen: false,
   chatInputFocused: false,
   tvInteractiveMode: false,
   tvEmbedError: null,
