@@ -10,6 +10,8 @@ interface NPCPreset {
   customization: AvatarCustomization;
 }
 
+const MAX_BUBBLE_CHARS = 55;
+
 const NPC_PRESETS: NPCPreset[] = [
   {
     id: 'npc-1',
@@ -104,47 +106,26 @@ const NPC_PRESETS: NPCPreset[] = [
 ];
 
 /**
- * Picks 1 to 3 random words from one of the currently displayed comments
- * so the NPC's overhead bubble stays compact and directly reflects active comments.
+ * Picks a random message from the current 3-second chunk without reserving already-chosen
+ * messages, and truncates it to MAX_BUBBLE_CHARS so viewers can see what chat is talking about right now.
  */
-function pickRandomWordsFromActiveComments(comments: StreamCommentItem[]): string | null {
-  if (!comments || comments.length === 0) return null;
+function pickRandomMessageFromChunk(chunk: StreamCommentItem[]): string | null {
+  if (!chunk || chunk.length === 0) return null;
 
-  const pickedComment = comments[Math.floor(Math.random() * comments.length)];
-  if (!pickedComment || !pickedComment.text) return null;
+  const picked = chunk[Math.floor(Math.random() * chunk.length)];
+  if (!picked || !picked.text) return null;
 
-  const rawWords = pickedComment.text
-    .replace(/https?:\/\/\S+/g, '')
-    .split(/\s+/)
-    .map((w) => w.trim())
-    .filter((w) => w.length > 0 && w.length <= 18);
+  const cleaned = picked.text
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  if (rawWords.length === 0) return null;
+  if (!cleaned) return null;
 
-  if (rawWords.length <= 3) {
-    return rawWords.join(' ').slice(0, 32);
+  if (cleaned.length <= MAX_BUBBLE_CHARS) {
+    return cleaned;
   }
-
-  // Pick 1 to 3 words from the currently displayed comment (either a short contiguous phrase or random words)
-  const wordCount = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3 words
-  if (Math.random() < 0.65) {
-    const startIdx = Math.floor(Math.random() * Math.max(1, rawWords.length - wordCount + 1));
-    return rawWords
-      .slice(startIdx, startIdx + wordCount)
-      .join(' ')
-      .slice(0, 32);
-  } else {
-    const chosen: string[] = [];
-    const usedIndices = new Set<number>();
-    while (chosen.length < wordCount && usedIndices.size < rawWords.length) {
-      const idx = Math.floor(Math.random() * rawWords.length);
-      if (!usedIndices.has(idx)) {
-        usedIndices.add(idx);
-        chosen.push(rawWords[idx]);
-      }
-    }
-    return chosen.join(' ').slice(0, 32);
-  }
+  return `${cleaned.slice(0, MAX_BUBBLE_CHARS - 1).trim()}…`;
 }
 
 export const CommentNPCs: React.FC = () => {
@@ -158,41 +139,29 @@ export const CommentNPCs: React.FC = () => {
     Record<string, { text: string; timestamp: number }>
   >({});
 
-  // Periodically have active NPCs pick random words from currently displayed comments
+  // Whenever a new 3-second chunk of messages arrives, each active NPC randomly picks a message from that chunk
   useEffect(() => {
-    if (npcCount <= 0 || recentComments.length === 0) return;
+    if (npcCount <= 0 || recentComments.length === 0) {
+      setNpcBubbles({});
+      return;
+    }
 
-    const triggerBubbleForNpc = (npcIndex: number) => {
-      const npc = NPC_PRESETS[npcIndex];
-      if (!npc) return;
-      const snippet = pickRandomWordsFromActiveComments(recentComments);
-      if (!snippet) return;
-
-      setNpcBubbles((prev) => ({
-        ...prev,
-        [npc.id]: {
-          text: snippet,
-          timestamp: Date.now(),
-        },
-      }));
-    };
-
-    // Initial staggered reaction when comments update or NPC count changes
-    const initialTimers = NPC_PRESETS.slice(0, npcCount).map((_, idx) =>
+    const timers = NPC_PRESETS.slice(0, npcCount).map((npc, idx) =>
       setTimeout(() => {
-        triggerBubbleForNpc(idx);
-      }, 450 + idx * 650)
+        const msgText = pickRandomMessageFromChunk(recentComments);
+        if (!msgText) return;
+        setNpcBubbles((prev) => ({
+          ...prev,
+          [npc.id]: {
+            text: msgText,
+            timestamp: Date.now(),
+          },
+        }));
+      }, idx * 280)
     );
 
-    // Continuous cycle where a random active NPC samples words from the current comments
-    const interval = setInterval(() => {
-      const idx = Math.floor(Math.random() * npcCount);
-      triggerBubbleForNpc(idx);
-    }, 2100);
-
     return () => {
-      initialTimers.forEach(clearTimeout);
-      clearInterval(interval);
+      timers.forEach(clearTimeout);
     };
   }, [npcCount, recentComments]);
 

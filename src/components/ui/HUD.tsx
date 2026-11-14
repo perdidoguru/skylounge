@@ -448,50 +448,30 @@ export const HUD: React.FC = () => {
                   </button>
                 </form>
 
-                {/* Quick Example Presets + 0..6 NPC Selector */}
+                {/* Sync with TV link + 0..6 NPC Selector */}
                 <div className="flex items-center justify-between gap-1">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundFX.playClick();
-                        configureCommentListener({
-                          url: 'https://www.twitch.tv/cellbit',
-                          active: true,
-                        });
-                      }}
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${
-                        commentListener?.url === 'https://www.twitch.tv/cellbit'
-                          ? 'bg-violet-500/25 border-violet-400 text-violet-200'
-                          : 'bg-slate-900/70 border-white/10 text-slate-300 hover:text-white'
-                      }`}
-                      title="Ouvir chat da Twitch do Cellbit"
-                    >
-                      Twitch Cellbit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundFX.playClick();
-                        configureCommentListener({
-                          url: 'https://www.youtube.com/watch?v=yznJwqZt1DY',
-                          active: true,
-                        });
-                      }}
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${
-                        commentListener?.url === 'https://www.youtube.com/watch?v=yznJwqZt1DY'
-                          ? 'bg-rose-500/25 border-rose-400 text-rose-200'
-                          : 'bg-slate-900/70 border-white/10 text-slate-300 hover:text-white'
-                      }`}
-                      title="Ouvir comentários do YouTube do Cellbit"
-                    >
-                      YT Cellbit
-                    </button>
+                  <div>
+                    {tvState.platform !== 'ambient' && tvState.url && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFX.playClick();
+                          configureCommentListener({
+                            url: tvState.url,
+                            active: true,
+                          });
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-900/70 border border-white/10 text-amber-300 hover:border-amber-400/50 transition"
+                        title="Ouvir os comentários do vídeo/live atual da TV"
+                      >
+                        Usar Link da TV
+                      </button>
+                    )}
                   </div>
 
                   {/* Compact 0-6 NPC selector */}
                   <div className="flex items-center gap-0.5" title="Quantidade de NPCs (0 a 6)">
-                    <span className="text-[9px] text-slate-400 mr-0.5">NPC:</span>
+                    <span className="text-[9px] text-slate-400 mr-0.5">NPCs:</span>
                     {[0, 1, 2, 3, 4, 5, 6].map((n) => {
                       const active = (commentListener?.npcCount ?? 3) === n;
                       return (
@@ -516,9 +496,9 @@ export const HUD: React.FC = () => {
                 </div>
               </div>
 
-              {/* Active Comments Currently Shown (NPCs pick random words from these!) */}
+              {/* Active 3-Second Chunk of Comments */}
               <div className="px-2.5 py-1.5 max-h-28 overflow-y-auto space-y-1">
-                {(commentListener?.recentComments || []).slice(-4).map((c) => (
+                {(commentListener?.recentComments || []).slice(-5).map((c) => (
                   <div key={c.id} className="text-[10px] leading-snug truncate">
                     <span className="font-semibold text-amber-300/90 mr-1">{c.author}:</span>
                     <span className="text-slate-200/90">{c.text}</span>
@@ -527,7 +507,9 @@ export const HUD: React.FC = () => {
                 {(!commentListener?.recentComments ||
                   commentListener.recentComments.length === 0) && (
                   <div className="text-[10px] text-slate-500 italic">
-                    Aguardando comentários...
+                    {commentListener?.active
+                      ? 'Aguardando novas mensagens ao vivo...'
+                      : 'Cole o link da live/vídeo acima para ouvir o chat.'}
                   </div>
                 )}
               </div>

@@ -7,70 +7,95 @@ const UA =
 interface RoomListenerHandle {
   ws?: WebSocket | null;
   interval?: NodeJS.Timeout | null;
-  commentPool: Array<{ author: string; text: string }>;
-  poolCursor: number;
-  lastRealMessageAt: number;
   cleanup: () => void;
 }
 
 const roomHandles = new Map<string, RoomListenerHandle>();
 
-const FALLBACK_PT_COMMENTS: Array<{ author: string; text: string }> = [
-  { author: 'chat_viewer', text: 'Olha esse momento na transmissão cara' },
-  { author: 'lounge_fan', text: 'Essa cena ficou absurda demais' },
-  { author: 'enigma_br', text: 'Alguém reparou no detalhe ali no fundo?' },
-  { author: 'rpg_master', text: 'Não acredito que ele acertou tudo isso' },
-  { author: 'sky_guest', text: 'A trilha sonora dessa parte arrepia' },
-  { author: 'noite_sp', text: 'Melhor live pra assistir com a galera' },
-  { author: 'pixel_art', text: 'Mano que plot twist incrível agora' },
-  { author: 'cyber_vibe', text: 'Todo mundo prestando atenção na tela' },
-];
-
-function pushCommentToState(
-  io: Server,
-  roomId: string,
-  state: CommentListenerState,
+function createCommentItem(
   author: string,
-  rawText: string
-) {
+  rawText: string,
+  platform: 'youtube' | 'twitch' | 'kick',
+  customId?: string
+): StreamCommentItem | null {
   const cleaned = rawText
     .replace(/https?:\/\/\S+/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 120);
+    .slice(0, 140);
 
-  if (!cleaned || cleaned.length < 2) return;
+  if (!cleaned || cleaned.length < 2) return null;
 
-  const item: StreamCommentItem = {
-    id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    author: author.replace(/^@/, '').slice(0, 22) || 'Espectador',
+  return {
+    id: customId || `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    author: author.replace(/^@/, '').slice(0, 24) || 'chat',
     text: cleaned,
-    platform: state.platform === 'none' ? 'twitch' : state.platform,
+    platform,
     timestamp: Date.now(),
   };
-
-  state.recentComments = [...state.recentComments.slice(-7), item];
-  io.to(roomId).emit('comments:updated', state);
 }
 
 /**
- * Extracts real comments from any YouTube video or live stream using YouTube's InnerTube /next API.
+ * Resolves a YouTube @handle (e.g. "@channel") to its active live or latest videoId.
  */
-async function fetchYouTubeRealComments(
-  videoId: string
-): Promise<Array<{ author: string; text: string }>> {
-  const results: Array<{ author: string; text: string }> = [];
+async function resolveYouTubeTargetVideoId(targetId: string): Promise<string> {
+  if (!targetId.startsWith('@')) return targetId;
+  try {
+    const res = await fetch(`https://www.youtube.com/${targetId}/live`, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8' },
+    });
+    const html = await res.text();
+    const canonicalMatch = html.match(
+      /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})"/
+    );
+    if (canonicalMatch?.[1]) return canonicalMatch[1];
+    const vidMatch = html.match(/"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"/);
+    if (vidMatch?.[1]) return vidMatch[1];
+  } catch {}
+  return targetId;
+}
+
+/**
+ * Inspects a YouTube video page to see if it has an active Live Chat ("liveChatRenderer":),
+ * or falls back to extracting real VOD comments via InnerTube /youtubei/v1/next.
+ */
+async function initYouTubeSource(videoId: string): Promise<{
+  mode: 'live_chat' | 'vod_comments';
+  apiKey?: string;
+  clientVersion?: string;
+  liveContinuation?: string;
+  vodComments?: Array<{ author: string; text: string }>;
+}> {
   try {
     const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}&hl=pt`, {
       headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8' },
     });
     const html = await watchRes.text();
-    const key = html.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)?.[1];
+    const apiKey = html.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)?.[1];
     const clientVersion =
       html.match(/"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"/)?.[1] || '2.20261112.10.00';
 
-    if (!key) return results;
+    if (!apiKey) {
+      return { mode: 'vod_comments', vodComments: [] };
+    }
 
+    // 1. Check for active YouTube Live Chat ("liveChatRenderer":)
+    const liveChatIdx = html.indexOf('"liveChatRenderer":');
+    if (liveChatIdx !== -1) {
+      const snippet = html.slice(liveChatIdx, liveChatIdx + 2500);
+      const conts = [...snippet.matchAll(/"continuation"\s*:\s*"([^"]+)"/g)].map((m) => m[1]);
+      if (conts.length > 0) {
+        return {
+          mode: 'live_chat',
+          apiKey,
+          clientVersion,
+          liveContinuation: conts[0],
+        };
+      }
+    }
+
+    // 2. Otherwise extract real VOD comments via /youtubei/v1/next
+    const vodComments: Array<{ author: string; text: string }> = [];
     const tokens = [
       ...new Set(
         [
@@ -82,7 +107,7 @@ async function fetchYouTubeRealComments(
 
     for (const tok of tokens.slice(0, 6)) {
       try {
-        const res = await fetch(`https://www.youtube.com/youtubei/v1/next?key=${key}`, {
+        const res = await fetch(`https://www.youtube.com/youtubei/v1/next?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
           body: JSON.stringify({
@@ -110,15 +135,21 @@ async function fetchYouTubeRealComments(
 
         for (let i = 0; i < contentMatches.length; i++) {
           const text = (contentMatches[i] || '').trim();
-          const author = (authorMatches[i] || `yt_user_${i + 1}`).replace(/^@/, '');
-          if (text.length >= 3) {
-            results.push({ author, text });
+          const author = (authorMatches[i] || 'espectador').replace(/^@/, '');
+          if (text.length >= 2) {
+            vodComments.push({ author, text });
           }
         }
       } catch {}
     }
-  } catch {}
-  return results;
+
+    return {
+      mode: 'vod_comments',
+      vodComments,
+    };
+  } catch {
+    return { mode: 'vod_comments', vodComments: [] };
+  }
 }
 
 export function stopRoomCommentListener(roomId: string) {
@@ -137,6 +168,7 @@ export function startOrUpdateRoomCommentListener(
   stopRoomCommentListener(roomId);
 
   if (!state.active || state.platform === 'none' || !state.targetId) {
+    state.recentComments = [];
     io.to(roomId).emit('comments:updated', state);
     return;
   }
@@ -145,9 +177,6 @@ export function startOrUpdateRoomCommentListener(
   const handle: RoomListenerHandle = {
     ws: null,
     interval: null,
-    commentPool: [...FALLBACK_PT_COMMENTS],
-    poolCursor: 0,
-    lastRealMessageAt: 0,
     cleanup: () => {
       closed = true;
       if (handle.interval) {
@@ -164,9 +193,15 @@ export function startOrUpdateRoomCommentListener(
   };
   roomHandles.set(roomId, handle);
 
-  // 1. TWITCH LIVE CHAT LISTENER (Anonymous Twitch IRC over WebSocket)
+  // Clear previous comments when switching source
+  state.recentComments = [];
+  io.to(roomId).emit('comments:updated', state);
+
+  // 1. TWITCH LIVE CHAT LISTENER (Collects real messages and emits a fresh chunk every 3 seconds)
   if (state.platform === 'twitch') {
     const channel = state.targetId.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    let incomingChunk: StreamCommentItem[] = [];
+    let sentFirstImmediateBatch = false;
 
     try {
       const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
@@ -198,78 +233,154 @@ export function startOrUpdateRoomCommentListener(
             if (msgIdx !== -1) {
               const text = line.slice(msgIdx + 2).trim();
               const displayMatch = line.match(/display-name=([^;]+)/);
-              const author = displayMatch && displayMatch[1] ? displayMatch[1] : 'twitch_chat';
-              if (text.length >= 2) {
-                handle.lastRealMessageAt = Date.now();
-                handle.commentPool.push({ author, text });
-                if (handle.commentPool.length > 60) {
-                  handle.commentPool.shift();
+              const idMatch = line.match(/(?:^|;)id=([^;]+)/);
+              const author = displayMatch && displayMatch[1] ? displayMatch[1] : 'chat';
+              const item = createCommentItem(author, text, 'twitch', idMatch?.[1]);
+              if (item) {
+                incomingChunk.push(item);
+                if (incomingChunk.length > 25) {
+                  incomingChunk.shift();
                 }
-                pushCommentToState(io, roomId, state, author, text);
               }
             }
           }
         }
+
+        // Send very first incoming message right away so user sees immediate live confirmation
+        if (!sentFirstImmediateBatch && incomingChunk.length >= 1) {
+          sentFirstImmediateBatch = true;
+          state.recentComments = [...incomingChunk.slice(-12)];
+          incomingChunk = [];
+          io.to(roomId).emit('comments:updated', state);
+        }
       });
     } catch {}
 
-    // Ensure there is always a steady stream of comments shown even if the Twitch channel is momentarily quiet
+    // Every 3 seconds, flush the new chunk of messages that arrived during that 3s window
     handle.interval = setInterval(() => {
       if (closed) return;
-      if (Date.now() - handle.lastRealMessageAt > 4200 && handle.commentPool.length > 0) {
-        const pick = handle.commentPool[handle.poolCursor % handle.commentPool.length];
-        handle.poolCursor++;
-        if (pick) {
-          pushCommentToState(io, roomId, state, pick.author, pick.text);
-        }
-      }
-    }, 3200);
-
-    return;
-  }
-
-  // 2. YOUTUBE COMMENTS & LIVE CHAT LISTENER
-  if (state.platform === 'youtube') {
-    const videoId = state.targetId;
-
-    fetchYouTubeRealComments(videoId).then((extracted) => {
-      if (closed) return;
-      if (extracted.length > 0) {
-        handle.commentPool = extracted;
-        handle.poolCursor = 0;
-        // Immediately seed the first 4 real comments so the list is populated right away
-        for (let i = 0; i < Math.min(4, extracted.length); i++) {
-          const item = extracted[i];
-          handle.poolCursor++;
-          pushCommentToState(io, roomId, state, item.author, item.text);
-        }
-      } else if (state.recentComments.length === 0) {
-        const seed = handle.commentPool[0];
-        pushCommentToState(io, roomId, state, seed.author, seed.text);
-      }
-    });
-
-    handle.interval = setInterval(() => {
-      if (closed || handle.commentPool.length === 0) return;
-      const item = handle.commentPool[handle.poolCursor % handle.commentPool.length];
-      handle.poolCursor++;
-      if (item) {
-        pushCommentToState(io, roomId, state, item.author, item.text);
-      }
-    }, 2800);
-
-    return;
-  }
-
-  // 3. KICK LIVE CHAT LISTENER
-  if (state.platform === 'kick') {
-    handle.interval = setInterval(() => {
-      if (closed || handle.commentPool.length === 0) return;
-      const item = handle.commentPool[handle.poolCursor % handle.commentPool.length];
-      handle.poolCursor++;
-      if (item) {
-        pushCommentToState(io, roomId, state, item.author, item.text);
+      if (incomingChunk.length > 0) {
+        const chunk = incomingChunk.slice(-12);
+        incomingChunk = [];
+        state.recentComments = chunk;
+        io.to(roomId).emit('comments:updated', state);
       }
     }, 3000);
+
+    return;
+  }
+
+  // 2. YOUTUBE LIVE CHAT & VOD COMMENTS (Polls a fresh chunk every 3 seconds)
+  if (state.platform === 'youtube') {
+    (async () => {
+      const resolvedVideoId = await resolveYouTubeTargetVideoId(state.targetId);
+      if (closed) return;
+
+      const sourceInfo = await initYouTubeSource(resolvedVideoId);
+      if (closed) return;
+
+      // 2A. Active YouTube Live Stream Chat (Polls get_live_chat every 3 seconds for new messages)
+      if (
+        sourceInfo.mode === 'live_chat' &&
+        sourceInfo.apiKey &&
+        sourceInfo.liveContinuation
+      ) {
+        const seenIds = new Set<string>();
+        const apiKey = sourceInfo.apiKey;
+        const clientVersion = sourceInfo.clientVersion || '2.20261112.10.00';
+        const initialTok = sourceInfo.liveContinuation;
+        let isFirstPoll = true;
+
+        const pollLiveChatChunk = async () => {
+          if (closed) return;
+          try {
+            const chatRes = await fetch(
+              `https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key=${apiKey}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+                body: JSON.stringify({
+                  context: { client: { clientName: 'WEB', clientVersion, hl: 'pt' } },
+                  continuation: initialTok,
+                }),
+              }
+            );
+            if (!chatRes.ok || closed) return;
+            const data = (await chatRes.json()) as any;
+            const actions: any[] =
+              data?.continuationContents?.liveChatContinuation?.actions || [];
+
+            const freshChunk: StreamCommentItem[] = [];
+            for (const act of actions) {
+              const renderer = act?.addChatItemAction?.item?.liveChatTextMessageRenderer;
+              if (!renderer || !renderer.id) continue;
+              if (seenIds.has(renderer.id)) continue;
+              seenIds.add(renderer.id);
+
+              const author = renderer.authorName?.simpleText || 'chat';
+              const runs: any[] = renderer.message?.runs || [];
+              const text = runs
+                .map((r) => r.text || '')
+                .join('')
+                .trim();
+
+              const item = createCommentItem(author, text, 'youtube', renderer.id);
+              if (item) {
+                freshChunk.push(item);
+              }
+            }
+
+            // Keep seenIds bounded
+            if (seenIds.size > 600) {
+              const arr = Array.from(seenIds).slice(-300);
+              seenIds.clear();
+              arr.forEach((id) => seenIds.add(id));
+            }
+
+            if (freshChunk.length > 0) {
+              // On first poll, take the last 10 most recent live messages; on 3s polls, take all new messages (up to 12)
+              const chunkToEmit = isFirstPoll
+                ? freshChunk.slice(-10)
+                : freshChunk.slice(-12);
+              isFirstPoll = false;
+              state.recentComments = chunkToEmit;
+              io.to(roomId).emit('comments:updated', state);
+            } else {
+              isFirstPoll = false;
+            }
+          } catch {}
+        };
+
+        await pollLiveChatChunk();
+        if (!closed) {
+          handle.interval = setInterval(pollLiveChatChunk, 3000);
+        }
+        return;
+      }
+
+      // 2B. Regular YouTube Video (VOD) — delivers unseen real comments in chunks of 5 every 3s without looping fake comments
+      const vodList = sourceInfo.vodComments || [];
+      let cursor = 0;
+
+      const emitNextVodChunk = () => {
+        if (closed || cursor >= vodList.length) return;
+        const slice = vodList.slice(cursor, cursor + 5);
+        cursor += slice.length;
+        const items = slice
+          .map((c) => createCommentItem(c.author, c.text, 'youtube'))
+          .filter((x): x is StreamCommentItem => Boolean(x));
+        if (items.length > 0) {
+          state.recentComments = items;
+          io.to(roomId).emit('comments:updated', state);
+        }
+      };
+
+      emitNextVodChunk();
+      if (vodList.length > 5 && !closed) {
+        handle.interval = setInterval(emitNextVodChunk, 3000);
+      }
+    })();
+
+    return;
   }
 }

@@ -555,42 +555,14 @@ export const CinemaControlModal: React.FC = () => {
               >
                 {commentLoading ? '...' : 'Ouvir'}
               </button>
-            </div>
-
-            {/* Quick Presets for Comment Listener (Cellbit Twitch / YouTube / Current TV) */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">
-                Exemplos:
-              </span>
-              <button
-                type="button"
-                onClick={() => handleApplyCommentUrl('https://www.twitch.tv/cellbit')}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition ${
-                  commentListener?.url === 'https://www.twitch.tv/cellbit'
-                    ? 'bg-violet-500/25 border-violet-400 text-violet-200'
-                    : 'bg-slate-800/80 border-white/10 text-slate-300 hover:border-violet-400/50'
-                }`}
-              >
-                Twitch: Cellbit
-              </button>
-              <button
-                type="button"
-                onClick={() => handleApplyCommentUrl('https://www.youtube.com/watch?v=yznJwqZt1DY')}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition ${
-                  commentListener?.url === 'https://www.youtube.com/watch?v=yznJwqZt1DY'
-                    ? 'bg-rose-500/25 border-rose-400 text-rose-200'
-                    : 'bg-slate-800/80 border-white/10 text-slate-300 hover:border-rose-400/50'
-                }`}
-              >
-                YouTube: Cellbit
-              </button>
               {tvState.platform !== 'ambient' && tvState.url && (
                 <button
                   type="button"
                   onClick={() => handleApplyCommentUrl(tvState.url)}
-                  className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-800/80 border border-white/10 text-amber-300 hover:border-amber-400/50 transition"
+                  className="px-2.5 py-1.5 rounded-lg text-[10px] font-semibold bg-slate-800/80 border border-white/10 text-amber-300 hover:border-amber-400/50 shrink-0 transition"
+                  title="Sincronizar ouvidor com o link atual da TV"
                 >
-                  Usar Link da TV
+                  Usar TV
                 </button>
               )}
             </div>

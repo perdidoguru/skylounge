@@ -23,24 +23,6 @@ export interface MediaPreset {
 
 export const CURATED_MEDIA_PRESETS: MediaPreset[] = [
   {
-    id: 'preset-cellbit-twitch',
-    title: 'Cellbit — Live & Chat na Twitch',
-    subtitle: 'Canal Oficial do Cellbit na Twitch',
-    platform: 'twitch',
-    url: 'https://www.twitch.tv/cellbit',
-    isLive: true,
-    badge: 'Twitch • Cellbit',
-  },
-  {
-    id: 'preset-cellbit-yt',
-    title: 'Cellbit — Ordem Paranormal / YouTube',
-    subtitle: 'Vídeo com Comentários Reais no YouTube',
-    platform: 'youtube',
-    url: 'https://www.youtube.com/watch?v=yznJwqZt1DY',
-    isLive: false,
-    badge: 'YouTube • Cellbit',
-  },
-  {
     id: 'preset-ambient',
     title: 'SkyLounge Synthwave & City Visualizer',
     subtitle: 'Visualizador Nativo 3D c/ Áudio Lo-Fi Sintetizado (Zero Bloqueio)',
@@ -78,7 +60,7 @@ export const CURATED_MEDIA_PRESETS: MediaPreset[] = [
   },
   {
     id: 'preset-kick-live',
-    title: 'Kick Featured Stream (xQc)',
+    title: 'Kick Featured Stream',
     subtitle: 'Transmissão Ao Vivo na Kick',
     platform: 'kick',
     url: 'https://kick.com/xqc',
@@ -104,11 +86,11 @@ export const DEFAULT_TV_STATE: TVMediaState = {
 };
 
 export const DEFAULT_COMMENT_LISTENER_STATE: CommentListenerState = {
-  url: 'https://www.twitch.tv/cellbit',
-  platform: 'twitch',
-  targetId: 'cellbit',
-  label: 'Twitch • cellbit',
-  active: true,
+  url: '',
+  platform: 'none',
+  targetId: '',
+  label: 'Cole o link da live/vídeo',
+  active: false,
   npcCount: 3,
   recentComments: [],
 };
@@ -133,7 +115,7 @@ export function parseCommentSourceUrl(rawInput: string): {
     };
   }
 
-  // Allow bare channel names like "cellbit" as Twitch channel shortcut
+  // Allow bare channel names as Twitch channel shortcut
   if (/^[a-zA-Z0-9_]{2,28}$/.test(trimmed) && !trimmed.includes('.')) {
     const ch = trimmed.toLowerCase();
     return {
@@ -144,6 +126,28 @@ export function parseCommentSourceUrl(rawInput: string): {
       label: `Twitch • ${ch}`,
     };
   }
+
+  // Support YouTube channel handles like https://www.youtube.com/@handle or /@handle/live
+  try {
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const u = new URL(withProto);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    if (
+      (host === 'youtube.com' || host === 'm.youtube.com') &&
+      u.pathname.startsWith('/@')
+    ) {
+      const handleSegment = u.pathname.split('/').filter(Boolean)[0]; // e.g. "@canal"
+      if (handleSegment && handleSegment.length > 2) {
+        return {
+          valid: true,
+          platform: 'youtube',
+          targetId: handleSegment,
+          url: `https://www.youtube.com/${handleSegment}/live`,
+          label: `YouTube • ${handleSegment}`,
+        };
+      }
+    }
+  } catch {}
 
   const parsed = parseMediaUrl(trimmed);
   if (!parsed.valid) {
@@ -168,7 +172,17 @@ export function parseCommentSourceUrl(rawInput: string): {
   }
 
   if (parsed.platform === 'twitch') {
-    const ch = parsed.channel || 'cellbit';
+    const ch = parsed.channel;
+    if (!ch) {
+      return {
+        valid: false,
+        platform: 'twitch',
+        targetId: '',
+        url: trimmed,
+        label: '',
+        error: 'Informe um link de canal ao vivo da Twitch.',
+      };
+    }
     return {
       valid: true,
       platform: 'twitch',
@@ -179,7 +193,17 @@ export function parseCommentSourceUrl(rawInput: string): {
   }
 
   if (parsed.platform === 'kick') {
-    const ch = parsed.channel || 'xqc';
+    const ch = parsed.channel;
+    if (!ch) {
+      return {
+        valid: false,
+        platform: 'kick',
+        targetId: '',
+        url: trimmed,
+        label: '',
+        error: 'Informe um link de canal válido da Kick.',
+      };
+    }
     return {
       valid: true,
       platform: 'kick',
@@ -341,7 +365,7 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
         channel: '',
         title: '',
         isLive: false,
-        error: 'Informe um canal válido da Twitch (ex: https://www.twitch.tv/cellbit).',
+        error: 'Informe um canal válido da Twitch (ex: https://www.twitch.tv/monstercat).',
       };
     }
 

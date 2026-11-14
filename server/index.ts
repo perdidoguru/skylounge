@@ -728,6 +728,24 @@ io.on('connection', (socket: Socket) => {
       };
 
       io.to(room.id).emit('tv:updated', room.tvState);
+
+      // Automatically connect the comment listener to the new TV media if supported
+      if (parsed.platform !== 'ambient') {
+        const commentParsed = parseCommentSourceUrl(parsed.url);
+        if (commentParsed.valid) {
+          room.commentListener = {
+            ...room.commentListener,
+            url: commentParsed.url,
+            platform: commentParsed.platform,
+            targetId: commentParsed.targetId,
+            label: commentParsed.label,
+            active: true,
+            recentComments: [],
+          };
+          startOrUpdateRoomCommentListener(io, room.id, room.commentListener);
+        }
+      }
+
       addSystemMessage(io, room, `${player.name} colocou na TV: ${room.tvState.title}`);
       io.emit('rooms:list', getPublicRoomSummaries());
       callback?.({ ok: true, tvState: room.tvState });
