@@ -14,8 +14,11 @@ import {
   Sparkles,
   RotateCcw,
   MousePointerClick,
+  RefreshCw,
+  Rewind,
+  FastForward,
 } from 'lucide-react';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore, tvPlayerBridge } from '../../store/useGameStore';
 import { CURATED_MEDIA_PRESETS, parseMediaUrl } from '../../../shared/mediaParser';
 import { soundFX } from '../../utils/soundEffects';
 
@@ -36,11 +39,15 @@ export const CinemaControlModal: React.FC = () => {
   const [inputUrl, setInputUrl] = useState('');
   const [customTitle, setCustomTitle] = useState('');
   const [forceLive, setForceLive] = useState(false);
+  const [syncWithHostOnLoad, setSyncWithHostOnLoad] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncFlash, setSyncFlash] = useState(false);
 
   const isHost = hostId === myPlayerId;
   const canControl = isHost || tvState.allowGuestsControl;
+  const isYouTubeFamily =
+    tvState.platform === 'youtube' || tvState.platform === 'youtube_live';
 
   // Live preview of detected platform as user types a URL
   const detectedPreview = useMemo(() => {
@@ -49,6 +56,11 @@ export const CinemaControlModal: React.FC = () => {
   }, [inputUrl, forceLive]);
 
   if (activeModal !== 'tv') return null;
+
+  const triggerSyncFlash = () => {
+    setSyncFlash(true);
+    setTimeout(() => setSyncFlash(false), 1200);
+  };
 
   const handleLoadUrl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +75,12 @@ export const CinemaControlModal: React.FC = () => {
       return;
     }
     setLoading(true);
-    const res = await setTVMedia(parsed.url, customTitle.trim() || undefined, forceLive);
+    const res = await setTVMedia(
+      parsed.url,
+      customTitle.trim() || undefined,
+      forceLive,
+      syncWithHostOnLoad
+    );
     setLoading(false);
     if (!res.ok) {
       setLocalError(res.error || 'Não foi possível carregar esta URL.');
@@ -81,11 +98,30 @@ export const CinemaControlModal: React.FC = () => {
     }
     soundFX.playClick();
     setLoading(true);
-    const res = await setTVMedia(url, title, isLive);
+    const res = await setTVMedia(url, title, isLive, true);
     setLoading(false);
     if (!res.ok && res.error) {
       setLocalError(res.error);
     }
+  };
+
+  const handleRelativeSeek = (deltaSeconds: number) => {
+    soundFX.playClick();
+    const cur = tvPlayerBridge.getCurrentTime() || tvState.playbackTime || 0;
+    const target = Math.max(0, cur + deltaSeconds);
+    sendTVControl('seek', target);
+    triggerSyncFlash();
+  };
+
+  const handleForceSyncEveryone = () => {
+    soundFX.playClick();
+    if (isHost || canControl) {
+      const cur = tvPlayerBridge.getCurrentTime() || tvState.playbackTime || 0;
+      sendTVControl('forceSync', cur);
+    } else {
+      tvPlayerBridge.syncToServerNow();
+    }
+    triggerSyncFlash();
   };
 
   const platformBadgeLabel = (p: string) => {
@@ -122,7 +158,7 @@ export const CinemaControlModal: React.FC = () => {
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Sincronizado em tempo real com todos os participantes da cobertura
+                Sincronização Host → Participantes sem engasgos (YouTube & YouTube Live)
               </p>
             </div>
           </div>
@@ -139,39 +175,54 @@ export const CinemaControlModal: React.FC = () => {
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5">
           {/* Now Playing Status Card */}
-          <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                {tvState.isLive ? (
-                  <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/40 text-[10px] font-bold uppercase text-rose-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" /> AO VIVO
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-[10px] font-bold uppercase text-sky-300">
-                    SOB DEMANDA
-                  </span>
-                )}
-                <span className="text-[11px] text-slate-400 truncate">
-                  Por <strong className="text-slate-200">{tvState.updatedBy}</strong>
-                </span>
-              </div>
-              <h3 className="font-display text-base font-bold text-white truncate">
-                {tvState.title}
-              </h3>
-              <p className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
-                {tvState.url}
-              </p>
-            </div>
+          <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col gap-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  {tvState.isLive ? (
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/40 text-[10px] font-bold uppercase text-rose-300">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" /> LIVE AO VIVO
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-[10px] font-bold uppercase text-sky-300">
+                      VÍDEO SOB DEMANDA
+                    </span>
+                  )}
 
-            {/* Playback & Local Volume Controls */}
-            <div className="flex items-center gap-2 shrink-0">
-              {canControl && (
-                <>
+                  {isYouTubeFamily && (
+                    <span
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                        tvState.syncEnabled
+                          ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+                          : 'bg-slate-800 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      <Radio className="w-3 h-3" />
+                      {tvState.syncEnabled ? 'Sync Live com Host: ATIVO' : 'Sync Manual'}
+                    </span>
+                  )}
+
+                  <span className="text-[11px] text-slate-400 truncate">
+                    Por <strong className="text-slate-200">{tvState.updatedBy}</strong>
+                  </span>
+                </div>
+                <h3 className="font-display text-base font-bold text-white truncate">
+                  {tvState.title}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
+                  {tvState.url}
+                </p>
+              </div>
+
+              {/* Primary Play/Pause & Sync Controls */}
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                {canControl && (
                   <button
                     type="button"
                     onClick={() => {
                       soundFX.playClick();
-                      sendTVControl(tvState.isPlaying ? 'pause' : 'play');
+                      const cur = tvPlayerBridge.getCurrentTime() || tvState.playbackTime || 0;
+                      sendTVControl(tvState.isPlaying ? 'pause' : 'play', cur);
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
                     title={tvState.isPlaying ? 'Pausar para todos' : 'Reproduzir para todos'}
@@ -186,23 +237,85 @@ export const CinemaControlModal: React.FC = () => {
                       </>
                     )}
                   </button>
+                )}
 
-                  {!tvState.isLive && tvState.platform === 'youtube' && (
+                {canControl && isYouTubeFamily && (
+                  <>
                     <button
                       type="button"
-                      onClick={() => {
-                        soundFX.playClick();
-                        sendTVControl('seek', 0);
-                      }}
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-                      title="Reiniciar Vídeo do Início (0:00)"
+                      onClick={() => handleRelativeSeek(-10)}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition"
+                      title="Voltar 10 segundos para todos"
                     >
-                      <RotateCcw className="w-4 h-4" />
+                      <Rewind className="w-3.5 h-3.5" /> -10s
                     </button>
-                  )}
-                </>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => handleRelativeSeek(10)}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition"
+                      title="Avançar 10 segundos para todos"
+                    >
+                      <FastForward className="w-3.5 h-3.5" /> +10s
+                    </button>
+                    {!tvState.isLive && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFX.playClick();
+                          sendTVControl('seek', 0);
+                        }}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                        title="Reiniciar Vídeo do Início (0:00)"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* Watch-Party Live Synchronization Bar (Host & Guests) */}
+            {isYouTubeFamily && (
+              <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={tvState.syncEnabled}
+                    disabled={!canControl}
+                    onChange={(e) => {
+                      soundFX.playClick();
+                      const cur = tvPlayerBridge.getCurrentTime() || tvState.playbackTime || 0;
+                      sendTVControl('toggleSync', cur, undefined, e.target.checked);
+                    }}
+                    className="accent-emerald-400 w-4 h-4 rounded cursor-pointer"
+                  />
+                  <span>
+                    <strong>Sincronização Live com o Host</strong>{' '}
+                    <span className="text-slate-400">
+                      (mantém todos os jogadores no mesmo tempo do Host no YouTube / Live)
+                    </span>
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleForceSyncEveryone}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                    syncFlash
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-300'
+                      : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-400/40'
+                  }`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncFlash ? 'animate-spin' : ''}`} />
+                  {syncFlash
+                    ? 'Sincronizado!'
+                    : canControl
+                    ? 'Sincronizar Todos com Meu Tempo'
+                    : 'Sincronizar com o Host Agora'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Provider Embed Error or Restriction Alert */}
@@ -319,7 +432,7 @@ export const CinemaControlModal: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <input
                 type="text"
                 maxLength={60}
@@ -327,17 +440,30 @@ export const CinemaControlModal: React.FC = () => {
                 onChange={(e) => setCustomTitle(e.target.value)}
                 disabled={!canControl}
                 placeholder="Título opcional para exibir no HUD..."
-                className="px-3 py-1.5 rounded-lg bg-slate-950/80 border border-white/10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-400/60 w-full sm:w-64"
+                className="px-3 py-1.5 rounded-lg bg-slate-950/80 border border-white/10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-400/60 w-full sm:w-56"
               />
-              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={forceLive}
-                  onChange={(e) => setForceLive(e.target.checked)}
-                  className="accent-amber-400 rounded"
-                />
-                Marcar como Transmissão Ao Vivo (Live)
-              </label>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-xs text-emerald-300 font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncWithHostOnLoad}
+                    onChange={(e) => setSyncWithHostOnLoad(e.target.checked)}
+                    className="accent-emerald-400 rounded"
+                  />
+                  Sincronizar Todos ao Vivo com o Host
+                </label>
+
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={forceLive}
+                    onChange={(e) => setForceLive(e.target.checked)}
+                    className="accent-rose-400 rounded"
+                  />
+                  É uma Live Ao Vivo (DVR)
+                </label>
+              </div>
             </div>
           </form>
 

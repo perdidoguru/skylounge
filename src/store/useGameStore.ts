@@ -9,6 +9,7 @@ import {
   RoomStatePayload,
   RoomSummary,
   TVMediaState,
+  TVSyncPulse,
 } from '../../shared/types';
 import { DEFAULT_TV_STATE } from '../../shared/mediaParser';
 import { soundFX } from '../utils/soundEffects';
@@ -88,6 +89,13 @@ export const localPlayerTransform = {
   isRightMouseDown: false,
 };
 
+// Direct bridge to the active YT.Player instance for zero-stutter Host/Guest sync
+export const tvPlayerBridge = {
+  getCurrentTime: (): number => 0,
+  getDuration: (): number => 0,
+  syncToServerNow: (): void => {},
+};
+
 interface GameStore {
   // Connection & Room
   socket: Socket | null;
@@ -149,12 +157,19 @@ interface GameStore {
   standUp: (exitPosition?: [number, number, number]) => void;
   setNearbySeatId: (seatId: string | null) => void;
   setNearTV: (near: boolean) => void;
-  setTVMedia: (url: string, title?: string, forceLive?: boolean) => Promise<{ ok: boolean; error?: string }>;
+  setTVMedia: (
+    url: string,
+    title?: string,
+    forceLive?: boolean,
+    syncEnabled?: boolean
+  ) => Promise<{ ok: boolean; error?: string }>;
   sendTVControl: (
-    action: 'play' | 'pause' | 'seek' | 'toggleGuests',
+    action: 'play' | 'pause' | 'seek' | 'forceSync' | 'toggleSync' | 'toggleGuests',
     playbackTime?: number,
-    allowGuestsControl?: boolean
+    allowGuestsControl?: boolean,
+    syncEnabled?: boolean
   ) => void;
+  sendHostSync: (playbackTime: number, isPlaying: boolean, isLive?: boolean) => void;
   sendChatMessage: (text: string) => void;
   kickPlayer: (targetPlayerId: string) => void;
   transferHost: (targetPlayerId: string) => void;
@@ -416,6 +431,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ tvState, tvEmbedError: null });
     });
 
+    socket.on('tv:syncPulse', (pulse: TVSyncPulse) => {
+      set((state) => ({
+        tvState: {
+          ...state.tvState,
+          playbackTime: pulse.playbackTime,
+          isPlaying: pulse.isPlaying,
+          isLive: pulse.isLive,
+          syncEnabled: pulse.syncEnabled,
+          updatedAt: pulse.updatedAt,
+        },
+      }));
+    });
+
     socket.on('chat:message', (msg: ChatMessage) => {
       if (!msg.isSystem) {
         soundFX.playChat();
@@ -621,7 +649,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  setTVMedia: (url, title, forceLive) => {
+  setTVMedia: (url, title, forceLive, syncEnabled = true) => {
     return new Promise((resolve) => {
       const { socket } = get();
       if (!socket) {
@@ -630,7 +658,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       socket.emit(
         'tv:setMedia',
-        { url, title, forceLive },
+        { url, title, forceLive, syncEnabled },
         (res: { ok: boolean; error?: string }) => {
           if (res?.ok) {
             get().addToast('Mídia sincronizada com toda a sala!', 'success');
@@ -641,10 +669,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
-  sendTVControl: (action, playbackTime, allowGuestsControl) => {
+  sendTVControl: (action, playbackTime, allowGuestsControl, syncEnabled) => {
     const { socket } = get();
     if (!socket) return;
-    socket.emit('tv:control', { action, playbackTime, allowGuestsControl });
+    socket.emit('tv:control', { action, playbackTime, allowGuestsControl, syncEnabled });
+  },
+
+  sendHostSync: (playbackTime, isPlaying, isLive) => {
+    const { socket, inGame } = get();
+    if (!socket || !inGame) return;
+    socket.emit('tv:hostSync', { playbackTime, isPlaying, isLive });
   },
 
   sendChatMessage: (text) => {

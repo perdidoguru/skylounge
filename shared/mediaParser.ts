@@ -95,10 +95,12 @@ export const DEFAULT_TV_STATE: TVMediaState = {
   title: 'Spring — Blender Open Movie (Curta 3D)',
   isPlaying: true,
   isLive: false,
+  syncEnabled: true,
   playbackTime: 0,
   updatedAt: Date.now(),
   updatedBy: 'Sistema',
   allowGuestsControl: true,
+  seq: 1,
 };
 
 /**

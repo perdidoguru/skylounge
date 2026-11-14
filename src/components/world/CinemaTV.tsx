@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
-import { useGameStore, localPlayerTransform } from '../../store/useGameStore';
+import {
+  useGameStore,
+  localPlayerTransform,
+  tvPlayerBridge,
+} from '../../store/useGameStore';
 import { soundFX } from '../../utils/soundEffects';
 
 // Screen dimensions in 3D meters (16:9 aspect ratio)
@@ -48,6 +52,8 @@ function ensureYouTubeApi(): Promise<any> {
 export const CinemaTV: React.FC = () => {
   const { size, camera, gl } = useThree();
   const tvState = useGameStore((s) => s.tvState);
+  const hostId = useGameStore((s) => s.hostId);
+  const myPlayerId = useGameStore((s) => s.myPlayerId);
   const settings = useGameStore((s) => s.settings);
   const tvInteractiveMode = useGameStore((s) => s.tvInteractiveMode);
   const tvEmbedError = useGameStore((s) => s.tvEmbedError);
@@ -55,10 +61,26 @@ export const CinemaTV: React.FC = () => {
   const setTVAutoplayBlocked = useGameStore((s) => s.setTVAutoplayBlocked);
   const setActiveModal = useGameStore((s) => s.setActiveModal);
   const setNearTV = useGameStore((s) => s.setNearTV);
+  const sendHostSync = useGameStore((s) => s.sendHostSync);
+  const sendTVControl = useGameStore((s) => s.sendTVControl);
 
   const biasLightLeftRef = useRef<THREE.PointLight>(null);
   const biasLightRightRef = useRef<THREE.PointLight>(null);
   const glowStripMatRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  // Anti-stutter synchronization state refs
+  const isInternalUpdateRef = useRef(false);
+  const lastSeekAtRef = useRef(0);
+  const driftStrikesRef = useRef(0);
+  const lastHandledSeqRef = useRef(0);
+  const lastHostReportedTimeRef = useRef(0);
+
+  const markInternalUpdate = (durationMs = 850) => {
+    isInternalUpdateRef.current = true;
+    window.setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, durationMs);
+  };
 
   // WebGL Hole-Punch Material (writes RGBA=(0,0,0,0) and Z=Z_tv into WebGL depth buffer!)
   const holePunchMaterial = useMemo(() => {
@@ -184,6 +206,9 @@ export const CinemaTV: React.FC = () => {
 
     setTVEmbedError(null);
     setTVAutoplayBlocked(false);
+    driftStrikesRef.current = 0;
+    lastSeekAtRef.current = 0;
+    lastHostReportedTimeRef.current = 0;
 
     if (ytPlayerRef.current) {
       try {
@@ -201,7 +226,7 @@ export const CinemaTV: React.FC = () => {
 
     wrapper.style.display = 'block';
 
-    // 1. YOUTUBE & YOUTUBE LIVE (Official YouTube IFrame API)
+    // 1. YOUTUBE & YOUTUBE LIVE (Official YouTube IFrame API with Anti-Stutter Sync)
     if (tvState.platform === 'youtube' || tvState.platform === 'youtube_live') {
       const mountDiv = document.createElement('div');
       mountDiv.id = `yt-player-mount-${Date.now()}`;
@@ -212,27 +237,63 @@ export const CinemaTV: React.FC = () => {
       let cancelled = false;
       ensureYouTubeApi().then((YT) => {
         if (cancelled || !screenWrapperDivRef.current) return;
-        const startSeconds =
-          !tvState.isLive && tvState.playbackTime > 1 ? Math.floor(tvState.playbackTime) : 0;
+
+        // IMPORTANT: Do NOT pass start: 0 on YouTube Live streams, as start: 0 rewinds DVR live streams to the beginning!
+        const playerVars: Record<string, any> = {
+          autoplay: tvState.isPlaying ? 1 : 0,
+          controls: 1,
+          rel: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          enablejsapi: 1,
+          origin: window.location.origin,
+        };
+        if (!tvState.isLive && tvState.playbackTime > 2) {
+          playerVars.start = Math.floor(tvState.playbackTime);
+        }
 
         ytPlayerRef.current = new YT.Player(mountDiv.id, {
           width: String(DOM_WIDTH),
           height: String(DOM_HEIGHT),
           videoId: tvState.videoId,
-          playerVars: {
-            autoplay: tvState.isPlaying ? 1 : 0,
-            controls: 1,
-            rel: 0,
-            modestbranding: 1,
-            playsinline: 1,
-            enablejsapi: 1,
-            start: startSeconds,
-            origin: window.location.origin,
-          },
+          playerVars,
           events: {
             onReady: (event: any) => {
+              if (cancelled) return;
               try {
                 const player = event.target;
+
+                // Expose bridge methods for UI manual sync / seek buttons
+                tvPlayerBridge.getCurrentTime = () => {
+                  try {
+                    return Number(player.getCurrentTime?.()) || 0;
+                  } catch {
+                    return 0;
+                  }
+                };
+                tvPlayerBridge.getDuration = () => {
+                  try {
+                    return Number(player.getDuration?.()) || 0;
+                  } catch {
+                    return 0;
+                  }
+                };
+                tvPlayerBridge.syncToServerNow = () => {
+                  try {
+                    const latest = useGameStore.getState().tvState;
+                    if (latest.playbackTime > 0.5 || !latest.isLive) {
+                      const elapsed = latest.isPlaying
+                        ? Math.max(0, (Date.now() - latest.updatedAt) / 1000)
+                        : 0;
+                      const target = latest.playbackTime + elapsed;
+                      markInternalUpdate(900);
+                      lastSeekAtRef.current = Date.now();
+                      player.seekTo?.(target, true);
+                      if (latest.isPlaying) player.playVideo?.();
+                    }
+                  } catch {}
+                };
+
                 const currentSettings = useGameStore.getState().settings;
                 player.setVolume(currentSettings.tvVolume);
                 if (currentSettings.tvMuted) {
@@ -242,21 +303,31 @@ export const CinemaTV: React.FC = () => {
                 }
 
                 const latestTV = useGameStore.getState().tvState;
-                if (!latestTV.isLive && latestTV.playbackTime > 2) {
+                lastHandledSeqRef.current = latestTV.seq || 1;
+
+                // Sync to authoritative room playbackTime on initial join (works for both VOD and YouTube Live DVR!)
+                if (latestTV.syncEnabled && latestTV.playbackTime > 1.5) {
                   const elapsed = latestTV.isPlaying
-                    ? (Date.now() - latestTV.updatedAt) / 1000
+                    ? Math.max(0, (Date.now() - latestTV.updatedAt) / 1000)
                     : 0;
+                  markInternalUpdate(900);
+                  lastSeekAtRef.current = Date.now();
                   player.seekTo(latestTV.playbackTime + elapsed, true);
                 }
 
                 if (latestTV.isPlaying) {
+                  markInternalUpdate(700);
                   player.playVideo();
                   // Verify after 1.2s if browser blocked unmuted autoplay
                   setTimeout(() => {
                     try {
                       const stateCode = player.getPlayerState?.();
-                      if (stateCode !== 1 && stateCode !== 3 && useGameStore.getState().tvState.isPlaying) {
-                        // Browser blocked unmuted autoplay: mute & play automatically, and show unmute pill
+                      if (
+                        stateCode !== 1 &&
+                        stateCode !== 3 &&
+                        useGameStore.getState().tvState.isPlaying
+                      ) {
+                        markInternalUpdate(700);
                         player.mute();
                         player.playVideo();
                         setTVAutoplayBlocked(true);
@@ -264,7 +335,54 @@ export const CinemaTV: React.FC = () => {
                     } catch {}
                   }, 1200);
                 } else {
+                  markInternalUpdate(700);
                   player.pauseVideo();
+                }
+              } catch {}
+            },
+            onStateChange: (event: any) => {
+              if (cancelled) return;
+              try {
+                const player = event.target;
+                const stateCode = event?.data;
+                const store = useGameStore.getState();
+                const isHostNow = store.hostId === store.myPlayerId;
+
+                if (stateCode === 1) {
+                  // PLAYING: ensure normal playback rate 1.0
+                  if (player.getPlaybackRate?.() !== 1) {
+                    player.setPlaybackRate?.(1);
+                  }
+                  // Immediately report Host's authoritative playhead (especially important when a YouTube Live stream starts!)
+                  if (isHostNow && store.tvState.syncEnabled) {
+                    const curTime = Number(player.getCurrentTime?.()) || 0;
+                    if (curTime > 0) {
+                      const videoData = player.getVideoData?.();
+                      const detectedLive = Boolean(videoData?.isLive) || store.tvState.isLive;
+                      lastHostReportedTimeRef.current = curTime;
+                      store.sendHostSync(curTime, true, detectedLive);
+                    }
+                  }
+                }
+
+                if (isInternalUpdateRef.current) return;
+
+                // If Host paused or resumed directly on the player, propagate to the room
+                if (isHostNow && store.tvState.syncEnabled) {
+                  const curTime = Number(player.getCurrentTime?.()) || 0;
+                  const videoData = player.getVideoData?.();
+                  const detectedLive = Boolean(videoData?.isLive) || store.tvState.isLive;
+
+                  if (stateCode === 1) {
+                    lastHostReportedTimeRef.current = curTime;
+                    store.sendHostSync(curTime, true, detectedLive);
+                    if (!store.tvState.isPlaying) {
+                      store.sendTVControl('play', curTime);
+                    }
+                  } else if (stateCode === 2) {
+                    lastHostReportedTimeRef.current = curTime;
+                    store.sendTVControl('pause', curTime);
+                  }
                 }
               } catch {}
             },
@@ -312,15 +430,15 @@ export const CinemaTV: React.FC = () => {
       if (tvState.videoId) {
         iframe.src = `https://player.twitch.tv/?video=${encodeURIComponent(
           tvState.videoId
-        )}&parent=${encodeURIComponent(parentHost)}&autoplay=${tvState.isPlaying ? 'true' : 'false'}&muted=${
-          settings.tvMuted ? 'true' : 'false'
-        }`;
+        )}&parent=${encodeURIComponent(parentHost)}&autoplay=${
+          tvState.isPlaying ? 'true' : 'false'
+        }&muted=${settings.tvMuted ? 'true' : 'false'}`;
       } else {
         iframe.src = `https://player.twitch.tv/?channel=${encodeURIComponent(
           tvState.channel
-        )}&parent=${encodeURIComponent(parentHost)}&autoplay=${tvState.isPlaying ? 'true' : 'false'}&muted=${
-          settings.tvMuted ? 'true' : 'false'
-        }`;
+        )}&parent=${encodeURIComponent(parentHost)}&autoplay=${
+          tvState.isPlaying ? 'true' : 'false'
+        }&muted=${settings.tvMuted ? 'true' : 'false'}`;
       }
       wrapper.appendChild(iframe);
       return;
@@ -343,29 +461,158 @@ export const CinemaTV: React.FC = () => {
     }
   }, [tvState.platform, tvState.videoId, tvState.channel, tvState.url]);
 
-  // Synchronize Play / Pause / Seek / Volume on YouTube IFrame API
+  // Host Authoritative Heartbeat Timer (Runs every 3s on Host to keep all players in sync on YouTube & YouTube Live)
+  useEffect(() => {
+    const isYouTubeFamily =
+      tvState.platform === 'youtube' || tvState.platform === 'youtube_live';
+    if (!isYouTubeFamily) return;
+
+    const interval = window.setInterval(() => {
+      const player = ytPlayerRef.current;
+      if (!player || typeof player.getPlayerState !== 'function') return;
+
+      const store = useGameStore.getState();
+      const isHostNow = store.hostId === store.myPlayerId;
+      if (!isHostNow || !store.tvState.syncEnabled) return;
+
+      try {
+        const stateCode = player.getPlayerState();
+        // Only emit authoritative sync when Host player is actively playing (1) or paused (2)
+        if (stateCode !== 1 && stateCode !== 2) return;
+
+        const curTime = Number(player.getCurrentTime?.()) || 0;
+        if (curTime <= 0) return;
+
+        const videoData = player.getVideoData?.();
+        const detectedLive = Boolean(videoData?.isLive) || store.tvState.isLive;
+
+        // Detect if Host scrubbed the timeline directly inside the YouTube iframe (> 4.5s jump)
+        const expectedTime =
+          lastHostReportedTimeRef.current + (stateCode === 1 ? 3.0 : 0);
+        if (
+          lastHostReportedTimeRef.current > 0 &&
+          Math.abs(curTime - expectedTime) > 4.5
+        ) {
+          lastHostReportedTimeRef.current = curTime;
+          sendTVControl('seek', curTime);
+        } else {
+          lastHostReportedTimeRef.current = curTime;
+          sendHostSync(curTime, stateCode === 1, detectedLive);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [tvState.platform, sendHostSync, sendTVControl]);
+
+  // Anti-Stutter Guest & Explicit Command Synchronization Effect
   useEffect(() => {
     const player = ytPlayerRef.current;
     if (!player || typeof player.getPlayerState !== 'function') return;
 
+    const isYouTubeFamily =
+      tvState.platform === 'youtube' || tvState.platform === 'youtube_live';
+    if (!isYouTubeFamily) return;
+
+    const isHostNow = hostId === myPlayerId;
+    const isExplicitCommand = tvState.seq !== lastHandledSeqRef.current;
+    lastHandledSeqRef.current = tvState.seq;
+
     try {
-      if (tvState.isPlaying) {
-        player.playVideo?.();
-      } else {
-        player.pauseVideo?.();
+      const playerState = player.getPlayerState();
+
+      // 1. Handle Explicit User Command (Play / Pause / Seek / ForceSync button clicked)
+      if (isExplicitCommand) {
+        if (tvState.isPlaying && playerState !== 1 && playerState !== 3) {
+          markInternalUpdate(800);
+          player.playVideo?.();
+        } else if (!tvState.isPlaying && playerState === 1) {
+          markInternalUpdate(800);
+          player.pauseVideo?.();
+        }
+
+        if (tvState.syncEnabled && (tvState.playbackTime > 0 || !tvState.isLive)) {
+          const cur = Number(player.getCurrentTime?.()) || 0;
+          const elapsed = tvState.isPlaying
+            ? Math.max(0, Math.min(3.0, (Date.now() - tvState.updatedAt) / 1000))
+            : 0;
+          const target = tvState.playbackTime + elapsed;
+
+          // Only seek if difference > 1.2s (prevents Host from seeking itself when Host initiated the command!)
+          if (Math.abs(cur - target) > 1.2) {
+            markInternalUpdate(900);
+            lastSeekAtRef.current = Date.now();
+            driftStrikesRef.current = 0;
+            player.seekTo?.(target, true);
+          }
+        }
+        return;
       }
 
-      if (!tvState.isLive && tvState.platform === 'youtube') {
-        const current = player.getCurrentTime?.() || 0;
-        const target =
-          tvState.playbackTime +
-          (tvState.isPlaying ? Math.max(0, (Date.now() - tvState.updatedAt) / 1000) : 0);
-        if (Math.abs(current - target) > 3.0) {
-          player.seekTo?.(target, true);
-        }
+      // 2. Background Heartbeat Sync (tv:syncPulse):
+      // CRITICAL ANTI-STUTTER RULE: The Host NEVER seeks itself on background heartbeats!
+      if (isHostNow || !tvState.syncEnabled) return;
+
+      // Sync play/pause state for Guests
+      if (tvState.isPlaying && playerState === 2) {
+        markInternalUpdate(700);
+        player.playVideo?.();
+        return;
+      } else if (!tvState.isPlaying && playerState === 1) {
+        markInternalUpdate(700);
+        player.pauseVideo?.();
+        return;
       }
+
+      // CRITICAL ANTI-STUTTER RULE: Never call seekTo while player is BUFFERING (3) or UNSTARTED (-1)
+      if (playerState !== 1) return;
+
+      // Cooldown guard: wait at least 8 seconds after any seek before considering another drift correction
+      const now = Date.now();
+      if (now - lastSeekAtRef.current < 8000) return;
+
+      const cur = Number(player.getCurrentTime?.()) || 0;
+      if (tvState.playbackTime <= 0 || cur <= 0) return;
+
+      const elapsed = Math.max(0, Math.min(2.5, (now - tvState.updatedAt) / 1000));
+      const target = tvState.playbackTime + elapsed;
+      const drift = target - cur;
+      const absDrift = Math.abs(drift);
+
+      // Tier 1: Deadband (< 1.8s) -> Completely in sync, zero action, zero micro-jumps!
+      if (absDrift < 1.8) {
+        driftStrikesRef.current = 0;
+        return;
+      }
+
+      // Tier 2: Moderate drift (1.8s .. 4.0s) -> Require 2 consecutive heartbeats (6s+) before seeking
+      if (absDrift < 4.0) {
+        driftStrikesRef.current += 1;
+        if (driftStrikesRef.current >= 2) {
+          markInternalUpdate(900);
+          lastSeekAtRef.current = now;
+          driftStrikesRef.current = 0;
+          player.seekTo?.(target + 0.15, true);
+        }
+        return;
+      }
+
+      // Tier 3: Large desync (>= 4.0s, e.g. late joiner or tab wake-up) -> Single immediate clean seek
+      markInternalUpdate(900);
+      lastSeekAtRef.current = now;
+      driftStrikesRef.current = 0;
+      player.seekTo?.(target + 0.2, true);
     } catch {}
-  }, [tvState.isPlaying, tvState.playbackTime, tvState.updatedAt, tvState.isLive, tvState.platform]);
+  }, [
+    tvState.seq,
+    tvState.isPlaying,
+    tvState.playbackTime,
+    tvState.updatedAt,
+    tvState.syncEnabled,
+    tvState.platform,
+    hostId,
+    myPlayerId,
+  ]);
 
   useEffect(() => {
     const player = ytPlayerRef.current;
@@ -411,7 +658,6 @@ export const CinemaTV: React.FC = () => {
     setNearTV(distSq < 85); // within ~9.2m of the TV
 
     // Animate ambient bias lighting behind the TV
-    const hueShift = (t * 0.08) % 1;
     const colorA = new THREE.Color().setHSL(0.08 + Math.sin(t * 0.5) * 0.04, 0.85, 0.55);
     const colorB = new THREE.Color().setHSL(0.72 + Math.cos(t * 0.4) * 0.06, 0.75, 0.55);
 

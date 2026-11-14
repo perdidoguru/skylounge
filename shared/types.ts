@@ -52,10 +52,21 @@ export interface TVMediaState {
   title: string;
   isPlaying: boolean;
   isLive: boolean;
-  playbackTime: number; // in seconds for VODs
-  updatedAt: number;    // server timestamp (ms) when state/time was updated
-  updatedBy: string;    // player name
+  syncEnabled: boolean; // True = Synchronize all players with Host in real-time
+  playbackTime: number; // Current playhead in seconds (works for both VOD and YouTube Live DVR)
+  updatedAt: number;    // Server timestamp (ms) when playbackTime was recorded
+  updatedBy: string;    // Player name
   allowGuestsControl: boolean;
+  seq: number;          // Increments on explicit user actions (play/pause/seek/forceSync)
+}
+
+export interface TVSyncPulse {
+  playbackTime: number;
+  isPlaying: boolean;
+  isLive: boolean;
+  syncEnabled: boolean;
+  updatedAt: number;
+  hostId: string;
 }
 
 export interface ChatMessage {

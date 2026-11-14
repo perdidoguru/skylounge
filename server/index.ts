@@ -110,7 +110,8 @@ function sanitizeCustomization(raw: Partial<AvatarCustomization> | undefined): A
 }
 
 function computeEffectiveTVState(tv: TVMediaState): TVMediaState {
-  if (!tv.isPlaying || tv.isLive || tv.platform !== 'youtube') {
+  const isYouTubeFamily = tv.platform === 'youtube' || tv.platform === 'youtube_live';
+  if (!tv.isPlaying || !tv.syncEnabled || !isYouTubeFamily || tv.playbackTime <= 0) {
     return tv;
   }
   const elapsedSeconds = Math.max(0, (Date.now() - tv.updatedAt) / 1000);
@@ -632,7 +633,7 @@ io.on('connection', (socket: Socket) => {
   socket.on(
     'tv:setMedia',
     (
-      payload: { url: string; title?: string; forceLive?: boolean },
+      payload: { url: string; title?: string; forceLive?: boolean; syncEnabled?: boolean },
       callback?: (res: { ok: boolean; error?: string; tvState?: TVMediaState }) => void
     ) => {
       const roomId = socket.data.roomId as string | undefined;
@@ -658,6 +659,7 @@ io.on('connection', (socket: Socket) => {
       }
 
       const customTitle = sanitizeText(payload?.title, 80);
+      const nextSeq = (room.tvState.seq || 1) + 1;
 
       room.tvState = {
         url: parsed.url,
@@ -667,10 +669,12 @@ io.on('connection', (socket: Socket) => {
         title: customTitle || parsed.title,
         isPlaying: true,
         isLive: parsed.isLive,
+        syncEnabled: payload?.syncEnabled !== undefined ? Boolean(payload.syncEnabled) : true,
         playbackTime: 0,
         updatedAt: Date.now(),
         updatedBy: player.name,
         allowGuestsControl: room.tvState.allowGuestsControl,
+        seq: nextSeq,
       };
 
       io.to(room.id).emit('tv:updated', room.tvState);
@@ -680,12 +684,53 @@ io.on('connection', (socket: Socket) => {
     }
   );
 
-  // Cinema TV: Play / Pause / Seek / Toggle Guest Permission
+  // Authoritative Host Playback Heartbeat (Syncs all guests to the Host without looping back to Host)
+  socket.on(
+    'tv:hostSync',
+    (payload: { playbackTime: number; isPlaying: boolean; isLive?: boolean }) => {
+      const roomId = socket.data.roomId as string | undefined;
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Only accept authoritative time beacon from the room Host
+      if (room.hostId !== socket.id) return;
+
+      if (typeof payload?.playbackTime === 'number' && Number.isFinite(payload.playbackTime) && payload.playbackTime >= 0) {
+        room.tvState.playbackTime = payload.playbackTime;
+        room.tvState.updatedAt = Date.now();
+      }
+      if (typeof payload?.isPlaying === 'boolean') {
+        room.tvState.isPlaying = payload.isPlaying;
+      }
+      if (typeof payload?.isLive === 'boolean') {
+        room.tvState.isLive = payload.isLive;
+        if (payload.isLive && room.tvState.platform === 'youtube') {
+          room.tvState.platform = 'youtube_live';
+        }
+      }
+
+      // Broadcast lightweight sync pulse ONLY to non-host guests so Host NEVER stutters!
+      if (room.tvState.syncEnabled) {
+        socket.to(room.id).emit('tv:syncPulse', {
+          playbackTime: room.tvState.playbackTime,
+          isPlaying: room.tvState.isPlaying,
+          isLive: room.tvState.isLive,
+          syncEnabled: room.tvState.syncEnabled,
+          updatedAt: room.tvState.updatedAt,
+          hostId: room.hostId,
+        });
+      }
+    }
+  );
+
+  // Cinema TV: Play / Pause / Seek / Force Sync / Toggle Sync / Toggle Guest Permission
   socket.on(
     'tv:control',
     (payload: {
-      action: 'play' | 'pause' | 'seek' | 'toggleGuests';
+      action: 'play' | 'pause' | 'seek' | 'forceSync' | 'toggleSync' | 'toggleGuests';
       playbackTime?: number;
+      syncEnabled?: boolean;
       allowGuestsControl?: boolean;
     }) => {
       const roomId = socket.data.roomId as string | undefined;
@@ -699,28 +744,31 @@ io.on('connection', (socket: Socket) => {
       if (!isHost && !room.tvState.allowGuestsControl) return;
 
       const currentEffective = computeEffectiveTVState(room.tvState);
+      const nextSeq = (room.tvState.seq || 1) + 1;
 
       if (payload.action === 'play') {
         room.tvState = {
           ...currentEffective,
           isPlaying: true,
           playbackTime:
-            typeof payload.playbackTime === 'number'
-              ? Math.max(0, payload.playbackTime)
+            typeof payload.playbackTime === 'number' && payload.playbackTime >= 0
+              ? payload.playbackTime
               : currentEffective.playbackTime,
           updatedAt: Date.now(),
           updatedBy: player.name,
+          seq: nextSeq,
         };
       } else if (payload.action === 'pause') {
         room.tvState = {
           ...currentEffective,
           isPlaying: false,
           playbackTime:
-            typeof payload.playbackTime === 'number'
-              ? Math.max(0, payload.playbackTime)
+            typeof payload.playbackTime === 'number' && payload.playbackTime >= 0
+              ? payload.playbackTime
               : currentEffective.playbackTime,
           updatedAt: Date.now(),
           updatedBy: player.name,
+          seq: nextSeq,
         };
       } else if (payload.action === 'seek' && typeof payload.playbackTime === 'number') {
         room.tvState = {
@@ -728,12 +776,49 @@ io.on('connection', (socket: Socket) => {
           playbackTime: Math.max(0, payload.playbackTime),
           updatedAt: Date.now(),
           updatedBy: player.name,
+          seq: nextSeq,
         };
+      } else if (payload.action === 'forceSync') {
+        room.tvState = {
+          ...currentEffective,
+          syncEnabled: true,
+          playbackTime:
+            typeof payload.playbackTime === 'number' && payload.playbackTime >= 0
+              ? payload.playbackTime
+              : currentEffective.playbackTime,
+          updatedAt: Date.now(),
+          updatedBy: player.name,
+          seq: nextSeq,
+        };
+      } else if (payload.action === 'toggleSync') {
+        const nextSync =
+          typeof payload.syncEnabled === 'boolean'
+            ? payload.syncEnabled
+            : !currentEffective.syncEnabled;
+        room.tvState = {
+          ...currentEffective,
+          syncEnabled: nextSync,
+          playbackTime:
+            typeof payload.playbackTime === 'number' && payload.playbackTime >= 0
+              ? payload.playbackTime
+              : currentEffective.playbackTime,
+          updatedAt: Date.now(),
+          updatedBy: player.name,
+          seq: nextSeq,
+        };
+        addSystemMessage(
+          io,
+          room,
+          nextSync
+            ? `${player.name} ativou a Sincronização Live da TV entre todos os jogadores.`
+            : `${player.name} desativou a sincronização automática da TV.`
+        );
       } else if (payload.action === 'toggleGuests' && isHost) {
         room.tvState = {
           ...currentEffective,
           allowGuestsControl: Boolean(payload.allowGuestsControl),
           updatedAt: Date.now(),
+          seq: nextSeq,
         };
         addSystemMessage(
           io,
