@@ -152,9 +152,9 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       emissiveIntensity: 0.25,
     });
     const blush = new THREE.MeshBasicMaterial({
-      color: '#f472b6',
+      color: '#ff6b9d',
       transparent: true,
-      opacity: isFeminine ? 0.38 : 0.26,
+      opacity: isFeminine ? 0.5 : 0.38,
     });
     const lipTint = new THREE.MeshStandardMaterial({
       color: isFeminine ? '#e15b76' : '#261b22',
@@ -263,111 +263,140 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     headRotY = activeHeadYaw;
     headRotX = activeHeadPitch;
 
+    // Cute subtle talking bounce & head tilt when chat bubble is active
+    const isTalking = Boolean(activeBubbleText);
+    const talkBounce = isTalking ? Math.abs(Math.sin(t * 9.5)) * 0.018 : 0;
+    const talkHeadTilt = isTalking ? Math.sin(t * 7.5) * 0.065 : 0;
+
     switch (activeAnim) {
       case 'idle': {
-        const breath = Math.sin(t * 2.1);
-        hipsY = 0.72 + breath * 0.012;
-        spineRotX = breath * 0.025;
-        spineRotZ = Math.cos(t * 1.1) * (isFeminine ? 0.026 : 0.018);
-        hipsRotY = isFeminine ? Math.sin(t * 1.1) * 0.04 : 0;
-        lArmX = Math.sin(t * 1.5) * 0.04;
-        rArmX = -Math.sin(t * 1.5) * 0.04;
-        lArmZ = (isFeminine ? 0.09 : 0.12) + breath * 0.015;
-        rArmZ = -(isFeminine ? 0.09 : 0.12) - breath * 0.015;
-        headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.05;
-        headRotX = activeHeadPitch + Math.cos(t * 1.3) * 0.03;
+        // Cute bouncy chibi idle: cheerful breathing bob, gentle head tilt, slightly flared relaxed arms
+        const breath = Math.sin(t * 2.6);
+        const sway = Math.sin(t * 1.3);
+        hipsY = 0.72 + Math.abs(breath) * 0.018 + talkBounce;
+        spineRotX = breath * 0.028;
+        spineRotZ = sway * (isFeminine ? 0.038 : 0.028);
+        hipsRotY = sway * (isFeminine ? 0.055 : 0.03);
+        lArmX = Math.sin(t * 1.8) * 0.06;
+        rArmX = -Math.sin(t * 1.8) * 0.06;
+        lArmZ = (isFeminine ? 0.16 : 0.18) + Math.abs(breath) * 0.025;
+        rArmZ = -(isFeminine ? 0.16 : 0.18) - Math.abs(breath) * 0.025;
+        lForeX = -0.18;
+        rForeX = -0.18;
+        headRotY = activeHeadYaw + Math.sin(t * 0.9) * 0.06;
+        headRotX = activeHeadPitch + Math.cos(t * 1.5) * 0.035;
+        headRotZ = sway * 0.055 + talkHeadTilt;
         break;
       }
 
       case 'walk': {
-        const w = t * 8.5;
-        hipsY = 0.72 + Math.abs(Math.cos(w)) * 0.045;
-        hipsRotY = Math.sin(w) * (isFeminine ? 0.12 : 0.08);
-        spineRotX = 0.05;
-        spineRotZ = Math.cos(w) * (isFeminine ? 0.045 : 0.03);
+        // Cute bouncy chibi waddle-walk: happy vertical bounce, playful side-to-side head & torso sway, flared arms
+        const w = t * 9.2;
+        hipsY = 0.72 + Math.abs(Math.cos(w)) * 0.058 + talkBounce;
+        hipsRotY = Math.sin(w) * (isFeminine ? 0.14 : 0.1);
+        spineRotX = 0.04;
+        spineRotZ = Math.sin(w) * 0.065;
 
-        lLegX = Math.sin(w) * 0.56;
-        rLegX = -Math.sin(w) * 0.56;
-        lShinX = Math.max(0, -Math.cos(w) * 0.55);
-        rShinX = Math.max(0, Math.cos(w) * 0.55);
+        lLegX = Math.sin(w) * 0.58;
+        rLegX = -Math.sin(w) * 0.58;
+        lShinX = Math.max(0, -Math.cos(w) * 0.62);
+        rShinX = Math.max(0, Math.cos(w) * 0.62);
 
-        lArmX = -Math.sin(w) * 0.42;
-        rArmX = Math.sin(w) * 0.42;
-        lForeX = -0.26 - Math.max(0, -Math.sin(w)) * 0.22;
-        rForeX = -0.26 - Math.max(0, Math.sin(w)) * 0.22;
+        lArmX = -Math.sin(w) * 0.48;
+        rArmX = Math.sin(w) * 0.48;
+        lArmZ = 0.22 + Math.abs(Math.cos(w)) * 0.05;
+        rArmZ = -0.22 - Math.abs(Math.cos(w)) * 0.05;
+        lForeX = -0.34 - Math.max(0, -Math.sin(w)) * 0.25;
+        rForeX = -0.34 - Math.max(0, Math.sin(w)) * 0.25;
+        headRotZ = -Math.sin(w) * 0.075 + talkHeadTilt;
+        headRotX = activeHeadPitch + Math.abs(Math.cos(w)) * 0.04;
         break;
       }
 
       case 'run': {
-        const r = t * 13.5;
-        hipsY = 0.71 + Math.abs(Math.cos(r)) * 0.075;
-        hipsRotY = Math.sin(r) * 0.14;
-        spineRotX = 0.18;
-        spineRotZ = Math.cos(r) * 0.05;
+        // Cute energetic chibi dash with bouncy arms and lively head bob
+        const r = t * 14.0;
+        hipsY = 0.71 + Math.abs(Math.cos(r)) * 0.088 + talkBounce;
+        hipsRotY = Math.sin(r) * 0.16;
+        spineRotX = 0.16;
+        spineRotZ = Math.sin(r) * 0.085;
 
-        lLegX = Math.sin(r) * 0.92;
-        rLegX = -Math.sin(r) * 0.92;
-        lShinX = Math.max(0.1, -Math.cos(r) * 0.95);
-        rShinX = Math.max(0.1, Math.cos(r) * 0.95);
+        lLegX = Math.sin(r) * 0.94;
+        rLegX = -Math.sin(r) * 0.94;
+        lShinX = Math.max(0.12, -Math.cos(r) * 0.98);
+        rShinX = Math.max(0.12, Math.cos(r) * 0.98);
 
-        lArmX = -Math.sin(r) * 0.82;
-        rArmX = Math.sin(r) * 0.82;
-        lForeX = -0.85;
-        rForeX = -0.85;
-        headRotX = activeHeadPitch - 0.1;
+        lArmX = -Math.sin(r) * 0.85;
+        rArmX = Math.sin(r) * 0.85;
+        lArmZ = 0.28;
+        rArmZ = -0.28;
+        lForeX = -0.92;
+        rForeX = -0.92;
+        headRotX = activeHeadPitch - 0.08 + Math.abs(Math.cos(r)) * 0.05;
+        headRotZ = -Math.sin(r) * 0.08;
         break;
       }
 
       case 'jump': {
-        hipsY = 0.82;
-        spineRotX = -0.08;
-        lLegX = -0.35;
-        lShinX = 0.65;
-        rLegX = 0.22;
-        rShinX = 0.45;
-        lArmX = -0.65;
-        rArmX = -0.65;
-        lArmZ = 0.35;
-        rArmZ = -0.35;
+        // Cute joyful star-hop with raised arms and tucked legs
+        hipsY = 0.84;
+        spineRotX = -0.1;
+        lLegX = -0.42;
+        lShinX = 0.75;
+        rLegX = 0.24;
+        rShinX = 0.52;
+        lArmX = -0.95;
+        rArmX = -0.95;
+        lArmZ = 0.48;
+        rArmZ = -0.48;
+        lForeX = -0.35;
+        rForeX = -0.35;
+        headRotX = activeHeadPitch - 0.12;
         break;
       }
 
       case 'sit': {
-        const breath = Math.sin(t * 1.8);
+        const breath = Math.sin(t * 2.2);
+        const kick = Math.sin(t * 2.7);
+        const sway = Math.sin(t * 1.4);
         const posture: SeatPosture = (seatId && SEAT_MAP[seatId]?.posture) || 'sofa';
 
         if (posture === 'sofa') {
-          // 1. SOFA: Relaxed cinema sofa lean, pelvis resting directly on cushion (y=0.11 relative to seat surface)
-          hipsY = 0.11;
+          // 1. SOFA: Cute cozy cinema lean with gentle alternating foot kicks and happy head sway
+          hipsY = 0.11 + talkBounce * 0.6;
           hipsZ = -0.05;
-          spineRotX = -0.12 + breath * 0.015;
+          spineRotX = -0.1 + breath * 0.018;
+          spineRotZ = sway * 0.032;
           lLegX = -1.42;
-          lShinX = 1.38;
+          lShinX = 1.32 + kick * 0.09;
           rLegX = -1.42;
-          rShinX = 1.38;
+          rShinX = 1.32 - kick * 0.09;
           lLegZ = isFeminine ? -0.04 : 0.06;
           rLegZ = isFeminine ? 0.04 : -0.06;
 
-          lArmX = -0.32;
-          lArmZ = 0.06;
+          lArmX = -0.34;
+          lArmZ = 0.12;
           lForeX = -0.52;
           lForeZ = -0.22;
 
-          rArmX = -0.22;
-          rArmZ = -0.22;
-          rForeX = -0.45;
-          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.04;
-          headRotX = activeHeadPitch + Math.sin(t * 1.2) * 0.025;
+          rArmX = -0.34;
+          rArmZ = -0.12;
+          rForeX = -0.52;
+          rForeZ = 0.22;
+          headRotY = activeHeadYaw + Math.sin(t * 0.7) * 0.045;
+          headRotX = activeHeadPitch + Math.sin(t * 1.4) * 0.03;
+          headRotZ = sway * 0.055 + talkHeadTilt;
         } else if (posture === 'chaise') {
-          // 2. CHAISE LONGUE: Deep lounge recline with legs stretched out and ankles crossed
-          hipsY = 0.11;
+          // 2. CHAISE LONGUE: Relaxed sunbed lounge with cute ankle wiggle and cozy head tilt
+          hipsY = 0.11 + talkBounce * 0.6;
           hipsZ = -0.09;
-          spineRotX = -0.24 + breath * 0.014;
+          spineRotX = -0.22 + breath * 0.016;
+          spineRotZ = sway * 0.025;
           lLegX = -1.26;
-          lShinX = 0.35;
+          lShinX = 0.35 + kick * 0.06;
           lLegZ = -0.06;
           rLegX = -1.32;
-          rShinX = 0.42;
+          rShinX = 0.42 - kick * 0.06;
           rLegZ = 0.12;
 
           lArmX = -0.18;
@@ -376,35 +405,37 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
           rArmX = -0.32;
           rArmZ = -0.12;
           rForeX = -0.52;
-          headRotZ = 0.04;
-          headRotY = activeHeadYaw + Math.sin(t * 0.5) * 0.04;
+          headRotZ = 0.05 + sway * 0.04 + talkHeadTilt;
+          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.04;
         } else if (posture === 'pouf') {
-          // 3. VELVET POUF: Cozy cinema watch pose on the pouf cushion, hands resting comfortably on knees
-          hipsY = 0.11;
+          // 3. VELVET POUF: Cute attentive cinema watch pose, hands on knees, happy foot dangle & head bob
+          hipsY = 0.11 + Math.abs(breath) * 0.01 + talkBounce * 0.7;
           hipsZ = 0.0;
-          spineRotX = 0.08 + breath * 0.016;
+          spineRotX = 0.07 + breath * 0.02;
+          spineRotZ = sway * 0.04;
           lLegX = -1.38;
-          lShinX = 1.42;
+          lShinX = 1.36 + kick * 0.11;
           rLegX = -1.38;
-          rShinX = 1.42;
+          rShinX = 1.36 - kick * 0.11;
           lLegZ = 0.08;
           rLegZ = -0.08;
 
           lArmX = -0.38;
           rArmX = -0.38;
-          lArmZ = 0.08;
-          rArmZ = -0.08;
+          lArmZ = 0.12;
+          rArmZ = -0.12;
           lForeX = -0.48;
           rForeX = -0.48;
           lForeZ = -0.14;
           rForeZ = 0.14;
-          headRotX = activeHeadPitch - 0.06 + Math.sin(t * 1.4) * 0.03;
+          headRotX = activeHeadPitch - 0.05 + Math.sin(t * 1.6) * 0.035;
+          headRotZ = sway * 0.06 + talkHeadTilt;
         } else if (posture === 'cushion') {
-          // 4. FLOOR CUSHION: Cross-legged lotus sit directly on the low floor pillow
-          hipsY = 0.09;
+          // 4. FLOOR CUSHION: Cute cross-legged lotus sit with rhythmic happy upper-body sway
+          hipsY = 0.09 + talkBounce * 0.6;
           hipsZ = -0.02;
-          spineRotX = -0.03 + breath * 0.018;
-          spineRotZ = Math.sin(t * 1.1) * 0.028;
+          spineRotX = -0.02 + breath * 0.02;
+          spineRotZ = sway * 0.048;
 
           lLegX = -1.32;
           lLegZ = 0.52;
@@ -422,40 +453,43 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
           rArmZ = -0.18;
           lForeX = -0.48;
           rForeX = -0.48;
-          headRotY = activeHeadYaw + Math.sin(t * 0.7) * 0.05;
+          headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.05;
+          headRotZ = sway * 0.065 + talkHeadTilt;
         } else if (posture === 'vip') {
-          // 5. VIP PANORAMIC SOFA: Confident crossed-leg executive pose with arms draped on backrest
-          hipsY = 0.11;
+          // 5. VIP PANORAMIC SOFA: Cute relaxed lounge with swinging crossed foot
+          hipsY = 0.11 + talkBounce * 0.6;
           hipsZ = -0.06;
-          spineRotX = -0.18 + breath * 0.014;
+          spineRotX = -0.16 + breath * 0.016;
+          spineRotZ = sway * 0.03;
 
           lLegX = -1.42;
           lShinX = 1.38;
           rLegX = -1.58;
           rLegZ = 0.18;
           rLegY = -0.2;
-          rShinX = 1.32;
+          rShinX = 1.26 + kick * 0.09;
 
           lArmX = -0.14;
-          lArmZ = 0.56;
+          lArmZ = 0.52;
           lForeX = -0.32;
           rArmX = -0.14;
-          rArmZ = -0.56;
+          rArmZ = -0.52;
           rForeX = -0.32;
-          headRotY = activeHeadYaw + Math.sin(t * 0.5) * 0.05;
+          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.05;
+          headRotZ = sway * 0.045 + talkHeadTilt;
         } else if (posture === 'armchair') {
-          // 6. SUNSET READING ARMCHAIR: Elegant crossed-leg conversational pose
-          hipsY = 0.11;
+          // 6. SUNSET READING ARMCHAIR: Cute crossed-leg pose with playful hand & foot bounce
+          hipsY = 0.11 + talkBounce * 0.6;
           hipsZ = -0.05;
-          spineRotX = -0.1 + breath * 0.015;
-          spineRotZ = 0.04;
+          spineRotX = -0.08 + breath * 0.016;
+          spineRotZ = 0.04 + sway * 0.025;
 
           lLegX = -1.44;
           lLegZ = -0.05;
           lShinX = 1.36;
           rLegX = -1.56;
           rLegZ = 0.12;
-          rShinX = 1.28;
+          rShinX = 1.24 + kick * 0.08;
 
           lArmX = -0.35;
           lArmZ = 0.08;
@@ -464,94 +498,106 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
           rArmX = -0.46;
           rArmZ = -0.06;
-          rForeX = -0.68 + Math.sin(t * 1.6) * 0.05;
+          rForeX = -0.68 + Math.sin(t * 1.8) * 0.06;
           rForeZ = 0.12;
-          headRotZ = -0.05;
+          headRotZ = -0.05 + sway * 0.045 + talkHeadTilt;
           headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.06;
         } else if (posture === 'barstool') {
-          // 7. SKYBAR HIGH STOOL: High perch on barstool cushion, one foot hooked on ring, other dangling
-          hipsY = 0.12;
+          // 7. SKYBAR HIGH STOOL: High perch on barstool with playful dangling legs
+          hipsY = 0.12 + talkBounce * 0.6;
           hipsZ = 0.01;
-          spineRotX = 0.04 + breath * 0.015;
-          spineRotZ = Math.sin(t * 1.4) * 0.03;
+          spineRotX = 0.04 + breath * 0.018;
+          spineRotZ = sway * 0.04;
 
           lLegX = -1.18;
-          lShinX = 1.38;
-          rLegX = -0.72;
-          rShinX = 0.52 + Math.sin(t * 2.2) * 0.08;
+          lShinX = 1.32 - kick * 0.08;
+          rLegX = -0.78;
+          rShinX = 0.56 + kick * 0.14;
 
           lArmX = -0.45;
-          lArmZ = 0.12;
+          lArmZ = 0.14;
           lForeX = -0.58;
           rArmX = -0.45;
-          rArmZ = -0.12;
-          rForeX = -0.62 + Math.sin(t * 1.8) * 0.05;
+          rArmZ = -0.14;
+          rForeX = -0.62 + Math.sin(t * 2.0) * 0.06;
           headRotY = activeHeadYaw + Math.sin(t * 0.9) * 0.06;
+          headRotZ = sway * 0.05 + talkHeadTilt;
         }
         break;
       }
 
       case 'wave': {
-        const waveCycle = t * 9.5;
-        hipsY = 0.72 + Math.sin(t * 2.5) * 0.015;
-        spineRotZ = 0.06;
-        rArmX = -2.35;
-        rArmZ = -0.35 + Math.sin(waveCycle) * 0.28;
-        rForeX = -0.45 + Math.cos(waveCycle) * 0.22;
-        lArmX = 0.08;
-        lArmZ = 0.15;
-        headRotZ = -0.08;
-        headRotY = Math.sin(t * 2) * 0.1;
+        // Enthusiastic cute double-bounce chibi wave with happy head tilt
+        const waveCycle = t * 10.5;
+        hipsY = 0.72 + Math.abs(Math.sin(t * 5.2)) * 0.032;
+        spineRotZ = -0.08 + Math.sin(t * 2.6) * 0.04;
+        rArmX = -2.42;
+        rArmZ = -0.38 + Math.sin(waveCycle) * 0.32;
+        rForeX = -0.42 + Math.cos(waveCycle) * 0.25;
+        lArmX = 0.12;
+        lArmZ = 0.24;
+        lForeX = -0.25;
+        headRotZ = -0.12 + Math.sin(waveCycle * 0.5) * 0.05;
+        headRotY = Math.sin(t * 2.5) * 0.08;
         break;
       }
 
       case 'dance': {
-        const beat = t * 7.2;
-        hipsY = 0.68 + Math.abs(Math.sin(beat)) * 0.07;
-        hipsRotY = Math.sin(beat) * 0.28;
-        spineRotZ = Math.sin(beat * 0.5) * 0.14;
+        // Cute chibi happy-bounce dance with rhythmic arm pumps and playful head bobbing
+        const beat = t * 7.8;
+        hipsY = 0.68 + Math.abs(Math.sin(beat)) * 0.08;
+        hipsRotY = Math.sin(beat) * 0.3;
+        spineRotZ = Math.sin(beat * 0.5) * 0.16;
         spineRotX = Math.cos(beat) * 0.08;
 
-        lLegX = Math.sin(beat) * 0.35;
-        rLegX = -Math.sin(beat) * 0.35;
-        lShinX = Math.max(0, Math.cos(beat) * 0.45);
-        rShinX = Math.max(0, -Math.cos(beat) * 0.45);
+        lLegX = Math.sin(beat) * 0.38;
+        rLegX = -Math.sin(beat) * 0.38;
+        lShinX = Math.max(0, Math.cos(beat) * 0.5);
+        rShinX = Math.max(0, -Math.cos(beat) * 0.5);
 
-        lArmX = -1.4 + Math.sin(beat) * 0.65;
-        rArmX = -1.4 - Math.sin(beat) * 0.65;
-        lArmZ = 0.45 + Math.cos(beat * 0.5) * 0.25;
-        rArmZ = -0.45 - Math.cos(beat * 0.5) * 0.25;
+        lArmX = -1.45 + Math.sin(beat) * 0.68;
+        rArmX = -1.45 - Math.sin(beat) * 0.68;
+        lArmZ = 0.48 + Math.cos(beat * 0.5) * 0.26;
+        rArmZ = -0.48 - Math.cos(beat * 0.5) * 0.26;
         lForeX = -0.65 + Math.sin(beat * 2) * 0.25;
         rForeX = -0.65 - Math.sin(beat * 2) * 0.25;
 
         headRotY = Math.sin(beat * 0.5) * 0.22;
-        headRotZ = Math.cos(beat) * 0.1;
+        headRotZ = Math.sin(beat) * 0.12;
         break;
       }
 
       case 'cheer': {
-        const pump = t * 9.0;
-        hipsY = 0.73 + Math.abs(Math.sin(pump)) * 0.065;
-        spineRotX = -0.1;
-        lArmX = -2.6 + Math.sin(pump) * 0.3;
-        rArmX = -2.6 - Math.sin(pump) * 0.3;
-        lArmZ = 0.32;
-        rArmZ = -0.32;
+        // Cute excited chibi jump-cheer with pumping arms
+        const pump = t * 9.5;
+        hipsY = 0.73 + Math.abs(Math.sin(pump)) * 0.075;
+        spineRotX = -0.12;
+        spineRotZ = Math.sin(pump * 0.5) * 0.06;
+        lArmX = -2.65 + Math.sin(pump) * 0.32;
+        rArmX = -2.65 - Math.sin(pump) * 0.32;
+        lArmZ = 0.36;
+        rArmZ = -0.36;
         lForeX = -0.25;
         rForeX = -0.25;
-        headRotX = -0.15 + Math.sin(pump) * 0.08;
+        headRotX = -0.16 + Math.sin(pump) * 0.08;
+        headRotZ = Math.sin(pump * 0.5) * 0.08;
         break;
       }
 
       case 'laugh': {
-        const chuckle = t * 14.0;
-        hipsY = 0.71;
-        spineRotX = 0.14 + Math.sin(chuckle) * 0.05;
-        lArmX = -0.55;
-        rArmX = -0.55;
-        lForeX = -0.9;
-        rForeX = -0.9;
-        headRotX = -0.12 + Math.sin(chuckle) * 0.07;
+        // Cute chibi giggle with hands near cheeks/chest and bouncy shoulders
+        const chuckle = t * 14.5;
+        hipsY = 0.71 + Math.abs(Math.sin(chuckle * 0.5)) * 0.025;
+        spineRotX = 0.12 + Math.sin(chuckle) * 0.055;
+        spineRotZ = Math.sin(chuckle * 0.25) * 0.05;
+        lArmX = -0.75;
+        rArmX = -0.75;
+        lArmZ = 0.18;
+        rArmZ = -0.18;
+        lForeX = -1.15;
+        rForeX = -1.15;
+        headRotX = -0.1 + Math.sin(chuckle) * 0.075;
+        headRotZ = Math.sin(chuckle * 0.25) * 0.07;
         break;
       }
     }
@@ -825,113 +871,136 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             <cylinderGeometry args={[isFeminine ? 0.068 : 0.075, isFeminine ? 0.078 : 0.085, 0.12, 16]} />
           </mesh>
 
-          {/* HEAD & EXPRESSIVE FACE */}
-          <group ref={headGroupRef} position={[0, 0.74, 0]}>
-            {/* Sculpted Head Sphere */}
-            <mesh castShadow receiveShadow material={materials.skin} scale={[1.0, 0.96, 0.96]}>
+          {/* HEAD & EXPRESSIVE CUTE CHIBI FACE */}
+          <group ref={headGroupRef} position={[0, 0.74, 0]} scale={[1.15, 1.12, 1.13]}>
+            {/* Sculpted Chibi Head Sphere with Soft Cheeks */}
+            <mesh castShadow receiveShadow material={materials.skin} scale={[1.05, 0.96, 0.98]}>
               <sphereGeometry args={[0.235, 28, 24]} />
             </mesh>
 
-            {/* Ears */}
+            {/* Cute Rounded Ears */}
             <mesh
               castShadow
               material={materials.skin}
-              position={[-0.23, -0.01, 0]}
-              scale={[0.45, 0.8, 0.6]}
+              position={[-0.235, -0.015, 0]}
+              scale={[0.52, 0.78, 0.62]}
             >
-              <sphereGeometry args={[0.06, 12, 12]} />
+              <sphereGeometry args={[0.064, 12, 12]} />
             </mesh>
             <mesh
               castShadow
               material={materials.skin}
-              position={[0.23, -0.01, 0]}
-              scale={[0.45, 0.8, 0.6]}
+              position={[0.235, -0.015, 0]}
+              scale={[0.52, 0.78, 0.62]}
             >
-              <sphereGeometry args={[0.06, 12, 12]} />
+              <sphereGeometry args={[0.064, 12, 12]} />
             </mesh>
 
-            {/* Cute Button Nose */}
-            <mesh castShadow material={materials.skin} position={[0, -0.015, 0.23]}>
-              <sphereGeometry args={[isFeminine ? 0.022 : 0.026, 12, 12]} />
+            {/* Cute Tiny Button Nose */}
+            <mesh castShadow material={materials.skin} position={[0, -0.018, 0.234]}>
+              <sphereGeometry args={[isFeminine ? 0.02 : 0.023, 12, 12]} />
             </mesh>
 
-            {/* Cheek Blush */}
+            {/* Warm Oval Kawaii Cheek Blush + Cute Highlight Dots */}
             <mesh
               material={materials.blush}
-              position={[-0.11, -0.042, 0.203]}
-              rotation={[0, -0.35, 0]}
+              position={[-0.122, -0.044, 0.205]}
+              rotation={[0, -0.38, 0]}
+              scale={[1.32, 0.85, 1]}
             >
-              <circleGeometry args={[isFeminine ? 0.042 : 0.034, 16]} />
+              <circleGeometry args={[isFeminine ? 0.044 : 0.038, 16]} />
             </mesh>
             <mesh
-              material={materials.blush}
-              position={[0.11, -0.042, 0.203]}
-              rotation={[0, 0.35, 0]}
+              material={materials.white}
+              position={[-0.132, -0.038, 0.208]}
+              rotation={[0, -0.38, 0]}
             >
-              <circleGeometry args={[isFeminine ? 0.042 : 0.034, 16]} />
+              <circleGeometry args={[0.006, 8]} />
             </mesh>
 
-            {/* Left Eye Assembly */}
-            <group ref={leftEyeRef} position={[-0.082, 0.025, 0.208]} rotation={[0, -0.2, 0]}>
-              <mesh material={materials.white} scale={[0.85, 1.1, 0.4]}>
-                <sphereGeometry args={[0.038, 16, 16]} />
+            <mesh
+              material={materials.blush}
+              position={[0.122, -0.044, 0.205]}
+              rotation={[0, 0.38, 0]}
+              scale={[1.32, 0.85, 1]}
+            >
+              <circleGeometry args={[isFeminine ? 0.044 : 0.038, 16]} />
+            </mesh>
+            <mesh
+              material={materials.white}
+              position={[0.132, -0.038, 0.208]}
+              rotation={[0, 0.38, 0]}
+            >
+              <circleGeometry args={[0.006, 8]} />
+            </mesh>
+
+            {/* Left Big Sparkling Kawaii Eye */}
+            <group ref={leftEyeRef} position={[-0.084, 0.018, 0.212]} rotation={[0, -0.2, 0]}>
+              <mesh material={materials.white} scale={[0.92, 1.14, 0.4]}>
+                <sphereGeometry args={[0.044, 18, 18]} />
               </mesh>
-              <mesh material={materials.dark} position={[0, 0, 0.012]} scale={[0.85, 1.05, 0.35]}>
-                <sphereGeometry args={[0.025, 14, 14]} />
+              <mesh material={materials.dark} position={[0, -0.002, 0.012]} scale={[0.9, 1.1, 0.36]}>
+                <sphereGeometry args={[0.031, 16, 16]} />
               </mesh>
-              {/* Eye Catchlight Sparkle */}
-              <mesh material={materials.white} position={[0.008, 0.01, 0.022]}>
-                <sphereGeometry args={[0.007, 8, 8]} />
+              {/* Dual Star Catchlight Sparkles */}
+              <mesh material={materials.white} position={[0.01, 0.013, 0.025]}>
+                <sphereGeometry args={[0.01, 10, 10]} />
+              </mesh>
+              <mesh material={materials.white} position={[-0.01, -0.011, 0.024]}>
+                <sphereGeometry args={[0.0055, 8, 8]} />
               </mesh>
               {/* Feminine Winged Eyelashes */}
               {isFeminine && (
                 <group>
                   <mesh
                     material={materials.dark}
-                    position={[-0.006, 0.033, 0.012]}
+                    position={[-0.006, 0.039, 0.013]}
                     rotation={[0, 0, 0.22]}
                   >
-                    <capsuleGeometry args={[0.0055, 0.042, 4, 8]} />
+                    <capsuleGeometry args={[0.006, 0.046, 4, 8]} />
                   </mesh>
                   <mesh
                     material={materials.dark}
-                    position={[-0.032, 0.028, 0.01]}
+                    position={[-0.036, 0.032, 0.01]}
                     rotation={[0, 0, 0.65]}
                   >
-                    <coneGeometry args={[0.007, 0.024, 6]} />
+                    <coneGeometry args={[0.008, 0.026, 6]} />
                   </mesh>
                 </group>
               )}
             </group>
 
-            {/* Right Eye Assembly */}
-            <group ref={rightEyeRef} position={[0.082, 0.025, 0.208]} rotation={[0, 0.2, 0]}>
-              <mesh material={materials.white} scale={[0.85, 1.1, 0.4]}>
-                <sphereGeometry args={[0.038, 16, 16]} />
+            {/* Right Big Sparkling Kawaii Eye */}
+            <group ref={rightEyeRef} position={[0.084, 0.018, 0.212]} rotation={[0, 0.2, 0]}>
+              <mesh material={materials.white} scale={[0.92, 1.14, 0.4]}>
+                <sphereGeometry args={[0.044, 18, 18]} />
               </mesh>
-              <mesh material={materials.dark} position={[0, 0, 0.012]} scale={[0.85, 1.05, 0.35]}>
-                <sphereGeometry args={[0.025, 14, 14]} />
+              <mesh material={materials.dark} position={[0, -0.002, 0.012]} scale={[0.9, 1.1, 0.36]}>
+                <sphereGeometry args={[0.031, 16, 16]} />
               </mesh>
-              {/* Eye Catchlight Sparkle */}
-              <mesh material={materials.white} position={[0.008, 0.01, 0.022]}>
-                <sphereGeometry args={[0.007, 8, 8]} />
+              {/* Dual Star Catchlight Sparkles */}
+              <mesh material={materials.white} position={[0.01, 0.013, 0.025]}>
+                <sphereGeometry args={[0.01, 10, 10]} />
+              </mesh>
+              <mesh material={materials.white} position={[-0.01, -0.011, 0.024]}>
+                <sphereGeometry args={[0.0055, 8, 8]} />
               </mesh>
               {/* Feminine Winged Eyelashes */}
               {isFeminine && (
                 <group>
                   <mesh
                     material={materials.dark}
-                    position={[0.006, 0.033, 0.012]}
+                    position={[0.006, 0.039, 0.013]}
                     rotation={[0, 0, -0.22]}
                   >
-                    <capsuleGeometry args={[0.0055, 0.042, 4, 8]} />
+                    <capsuleGeometry args={[0.006, 0.046, 4, 8]} />
                   </mesh>
                   <mesh
                     material={materials.dark}
-                    position={[0.032, 0.028, 0.01]}
+                    position={[0.036, 0.032, 0.01]}
                     rotation={[0, 0, -0.65]}
                   >
-                    <coneGeometry args={[0.007, 0.024, 6]} />
+                    <coneGeometry args={[0.008, 0.026, 6]} />
                   </mesh>
                 </group>
               )}
@@ -940,26 +1009,26 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             {/* Eyebrows (Always cleanly visible below the hairline!) */}
             <mesh
               material={materials.hair}
-              position={[-0.085, 0.084, 0.208]}
-              rotation={[0, -0.2, isFeminine ? 0.16 : 0.08]}
+              position={[-0.085, 0.088, 0.21]}
+              rotation={[0, -0.2, isFeminine ? 0.16 : 0.1]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.042, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.04, 4, 8]} />
             </mesh>
             <mesh
               material={materials.hair}
-              position={[0.085, 0.084, 0.208]}
-              rotation={[0, 0.2, isFeminine ? -0.16 : -0.08]}
+              position={[0.085, 0.088, 0.21]}
+              rotation={[0, 0.2, isFeminine ? -0.16 : -0.1]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.042, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.04, 4, 8]} />
             </mesh>
 
-            {/* Expressive Smile / Lips */}
+            {/* Cute Happy Cat-Arch Smile */}
             <mesh
               material={materials.lipTint}
-              position={[0, -0.072, 0.214]}
+              position={[0, -0.068, 0.218]}
               rotation={[Math.PI * 0.95, 0, 0]}
             >
-              <torusGeometry args={[0.026, isFeminine ? 0.0075 : 0.006, 8, 16, Math.PI]} />
+              <torusGeometry args={[0.028, isFeminine ? 0.008 : 0.0068, 8, 16, Math.PI]} />
             </mesh>
 
             {/* ===================================================================
@@ -1542,10 +1611,15 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               >
                 <capsuleGeometry args={[isFeminine ? 0.044 : 0.05, 0.13, 8, 12]} />
               </mesh>
-              {/* Hand */}
-              <mesh castShadow material={materials.skin} position={[0, -0.21, 0]}>
-                <sphereGeometry args={[isFeminine ? 0.046 : 0.052, 12, 12]} />
-              </mesh>
+              {/* Cute Plump Chibi Hand & Thumb */}
+              <group position={[0, -0.21, 0]}>
+                <mesh castShadow material={materials.skin}>
+                  <sphereGeometry args={[isFeminine ? 0.054 : 0.058, 14, 14]} />
+                </mesh>
+                <mesh castShadow material={materials.skin} position={[0.034, 0.01, 0.022]}>
+                  <sphereGeometry args={[0.022, 10, 10]} />
+                </mesh>
+              </group>
             </group>
           </group>
 
@@ -1576,10 +1650,15 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               >
                 <capsuleGeometry args={[isFeminine ? 0.044 : 0.05, 0.13, 8, 12]} />
               </mesh>
-              {/* Hand */}
-              <mesh castShadow material={materials.skin} position={[0, -0.21, 0]}>
-                <sphereGeometry args={[isFeminine ? 0.046 : 0.052, 12, 12]} />
-              </mesh>
+              {/* Cute Plump Chibi Hand & Thumb */}
+              <group position={[0, -0.21, 0]}>
+                <mesh castShadow material={materials.skin}>
+                  <sphereGeometry args={[isFeminine ? 0.054 : 0.058, 14, 14]} />
+                </mesh>
+                <mesh castShadow material={materials.skin} position={[-0.034, 0.01, 0.022]}>
+                  <sphereGeometry args={[0.022, 10, 10]} />
+                </mesh>
+              </group>
             </group>
           </group>
         </group>
@@ -1591,7 +1670,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             material={hasSkirt ? materials.skin : materials.secondary}
             position={[0, -0.16, 0]}
           >
-            <capsuleGeometry args={[isFeminine ? 0.062 : 0.068, 0.22, 8, 12]} />
+            <capsuleGeometry args={[isFeminine ? 0.064 : 0.07, 0.22, 8, 12]} />
           </mesh>
           <group ref={leftShinRef} position={[0, -0.34, 0]}>
             <mesh
@@ -1601,18 +1680,30 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               }
               position={[0, -0.14, 0]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.052 : 0.058, 0.2, 8, 12]} />
+              <capsuleGeometry args={[isFeminine ? 0.054 : 0.06, 0.2, 8, 12]} />
             </mesh>
-            {/* Stylish Footwear */}
+            {/* Cute Rounded Capsule Sneakers */}
             <group position={[0, -0.31, 0.035]}>
-              <mesh castShadow material={materials.dark} position={[0, 0.02, 0]}>
-                <boxGeometry args={[isFeminine ? 0.108 : 0.12, 0.07, 0.2]} />
+              <mesh
+                castShadow
+                material={materials.dark}
+                position={[0, 0.022, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={[1.05, 1.0, 0.72]}
+              >
+                <capsuleGeometry args={[0.058, 0.09, 8, 14]} />
               </mesh>
-              <mesh castShadow material={materials.white} position={[0, -0.015, 0]}>
-                <boxGeometry args={[isFeminine ? 0.115 : 0.13, 0.028, 0.215]} />
+              <mesh
+                castShadow
+                material={materials.white}
+                position={[0, -0.012, 0.005]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={[1.14, 1.04, 0.36]}
+              >
+                <capsuleGeometry args={[0.06, 0.095, 8, 14]} />
               </mesh>
-              <mesh castShadow material={materials.primary} position={[0, 0.03, 0.04]}>
-                <boxGeometry args={[isFeminine ? 0.112 : 0.124, 0.025, 0.06]} />
+              <mesh castShadow material={materials.primary} position={[0, 0.035, 0.035]} scale={[1.1, 0.5, 0.8]}>
+                <sphereGeometry args={[0.048, 10, 10]} />
               </mesh>
             </group>
           </group>
@@ -1625,7 +1716,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             material={hasSkirt ? materials.skin : materials.secondary}
             position={[0, -0.16, 0]}
           >
-            <capsuleGeometry args={[isFeminine ? 0.062 : 0.068, 0.22, 8, 12]} />
+            <capsuleGeometry args={[isFeminine ? 0.064 : 0.07, 0.22, 8, 12]} />
           </mesh>
           <group ref={rightShinRef} position={[0, -0.34, 0]}>
             <mesh
@@ -1635,18 +1726,30 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               }
               position={[0, -0.14, 0]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.052 : 0.058, 0.2, 8, 12]} />
+              <capsuleGeometry args={[isFeminine ? 0.054 : 0.06, 0.2, 8, 12]} />
             </mesh>
-            {/* Stylish Footwear */}
+            {/* Cute Rounded Capsule Sneakers */}
             <group position={[0, -0.31, 0.035]}>
-              <mesh castShadow material={materials.dark} position={[0, 0.02, 0]}>
-                <boxGeometry args={[isFeminine ? 0.108 : 0.12, 0.07, 0.2]} />
+              <mesh
+                castShadow
+                material={materials.dark}
+                position={[0, 0.022, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={[1.05, 1.0, 0.72]}
+              >
+                <capsuleGeometry args={[0.058, 0.09, 8, 14]} />
               </mesh>
-              <mesh castShadow material={materials.white} position={[0, -0.015, 0]}>
-                <boxGeometry args={[isFeminine ? 0.115 : 0.13, 0.028, 0.215]} />
+              <mesh
+                castShadow
+                material={materials.white}
+                position={[0, -0.012, 0.005]}
+                rotation={[Math.PI / 2, 0, 0]}
+                scale={[1.14, 1.04, 0.36]}
+              >
+                <capsuleGeometry args={[0.06, 0.095, 8, 14]} />
               </mesh>
-              <mesh castShadow material={materials.primary} position={[0, 0.03, 0.04]}>
-                <boxGeometry args={[isFeminine ? 0.112 : 0.124, 0.025, 0.06]} />
+              <mesh castShadow material={materials.primary} position={[0, 0.035, 0.035]} scale={[1.1, 0.5, 0.8]}>
+                <sphereGeometry args={[0.048, 10, 10]} />
               </mesh>
             </group>
           </group>
