@@ -9,13 +9,23 @@ import {
   AnimationState,
   AvatarCustomization,
   ChatMessage,
+  CommentListenerState,
   PlayerState,
   RoomStatePayload,
   RoomSummary,
   TVMediaState,
 } from '../shared/types.js';
 import { SEAT_MAP } from '../shared/seats.js';
-import { DEFAULT_TV_STATE, parseMediaUrl } from '../shared/mediaParser.js';
+import {
+  DEFAULT_COMMENT_LISTENER_STATE,
+  DEFAULT_TV_STATE,
+  parseCommentSourceUrl,
+  parseMediaUrl,
+} from '../shared/mediaParser.js';
+import {
+  startOrUpdateRoomCommentListener,
+  stopRoomCommentListener,
+} from './commentListener.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +41,7 @@ interface InternalRoom {
   players: Map<string, PlayerState>;
   seats: Map<string, string>; // seatId -> playerId
   tvState: TVMediaState;
+  commentListener: CommentListenerState;
   messages: ChatMessage[];
   createdAt: number;
   emptySince: number | null;
@@ -52,6 +63,7 @@ function createDefaultRoom(): InternalRoom {
     players: new Map(),
     seats: new Map(),
     tvState: { ...DEFAULT_TV_STATE, updatedAt: Date.now() },
+    commentListener: { ...DEFAULT_COMMENT_LISTENER_STATE, recentComments: [] },
     messages: [
       {
         id: 'sys-welcome',
@@ -170,6 +182,7 @@ function serializeRoom(room: InternalRoom): RoomStatePayload {
     players,
     seats,
     tvState: computeEffectiveTVState(room.tvState),
+    commentListener: room.commentListener,
     messages: room.messages.slice(-50),
   };
 }
@@ -360,6 +373,7 @@ io.on('connection', (socket: Socket) => {
               updatedAt: Date.now(),
               updatedBy: customization.name,
             },
+            commentListener: { ...DEFAULT_COMMENT_LISTENER_STATE, recentComments: [] },
             messages: [
               {
                 id: `sys-${Date.now()}`,
@@ -390,6 +404,7 @@ io.on('connection', (socket: Socket) => {
               players: new Map(),
               seats: new Map(),
               tvState: { ...DEFAULT_TV_STATE, updatedAt: Date.now() },
+              commentListener: { ...DEFAULT_COMMENT_LISTENER_STATE, recentComments: [] },
               messages: [],
               createdAt: Date.now(),
               emptySince: null,
@@ -408,7 +423,11 @@ io.on('connection', (socket: Socket) => {
           room.hostId = socket.id;
         }
 
+        const wasEmpty = room.players.size === 0;
         room.emptySince = null;
+        if (wasEmpty && room.commentListener.active) {
+          startOrUpdateRoomCommentListener(io, room.id, room.commentListener);
+        }
 
         // Calculate a pleasant spawn position in the South Entrance Gallery looking North toward the TV & Skyline
         const spawnIndex = room.players.size;
@@ -864,6 +883,76 @@ io.on('connection', (socket: Socket) => {
     }
   );
 
+  // Comment Listener & Spectator NPCs (0 to 6 NPCs picking random words from active comments)
+  socket.on(
+    'comments:configure',
+    (
+      payload: {
+        url?: string;
+        npcCount?: number;
+        active?: boolean;
+      },
+      callback?: (res: { ok: boolean; error?: string; state?: CommentListenerState }) => void
+    ) => {
+      const roomId = socket.data.roomId as string | undefined;
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      if (!room) return;
+      const player = room.players.get(socket.id);
+      if (!player) return;
+
+      const isHost = room.hostId === socket.id;
+      if (!isHost && !room.tvState.allowGuestsControl) {
+        callback?.({
+          ok: false,
+          error: 'Apenas o anfitrião pode configurar o ouvidor de comentários no momento.',
+        });
+        return;
+      }
+
+      let sourceChanged = false;
+      if (typeof payload?.url === 'string' && payload.url.trim()) {
+        const parsed = parseCommentSourceUrl(payload.url);
+        if (!parsed.valid) {
+          callback?.({ ok: false, error: parsed.error || 'Link inválido.' });
+          return;
+        }
+        if (
+          room.commentListener.url !== parsed.url ||
+          room.commentListener.targetId !== parsed.targetId ||
+          !room.commentListener.active
+        ) {
+          sourceChanged = true;
+        }
+        room.commentListener.url = parsed.url;
+        room.commentListener.platform = parsed.platform;
+        room.commentListener.targetId = parsed.targetId;
+        room.commentListener.label = parsed.label;
+        room.commentListener.active = true;
+        room.commentListener.recentComments = [];
+      }
+
+      if (typeof payload?.npcCount === 'number' && Number.isFinite(payload.npcCount)) {
+        room.commentListener.npcCount = Math.max(0, Math.min(6, Math.round(payload.npcCount)));
+      }
+
+      if (typeof payload?.active === 'boolean') {
+        if (room.commentListener.active !== payload.active) {
+          sourceChanged = true;
+        }
+        room.commentListener.active = payload.active;
+      }
+
+      if (sourceChanged) {
+        startOrUpdateRoomCommentListener(io, room.id, room.commentListener);
+      } else {
+        io.to(room.id).emit('comments:updated', room.commentListener);
+      }
+
+      callback?.({ ok: true, state: room.commentListener });
+    }
+  );
+
   // Chat Message
   socket.on('chat:send', (payload: { text: string }) => {
     const now = Date.now();
@@ -961,6 +1050,7 @@ setInterval(() => {
   for (const [id, room] of rooms.entries()) {
     if (id === 'SKY-MAIN') continue;
     if (room.players.size === 0 && room.emptySince && now - room.emptySince > 5 * 60 * 1000) {
+      stopRoomCommentListener(id);
       rooms.delete(id);
       changed = true;
     }

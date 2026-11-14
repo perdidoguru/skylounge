@@ -108,6 +108,24 @@ export interface TVSyncPulse {
   hostId: string;
 }
 
+export interface StreamCommentItem {
+  id: string;
+  author: string;
+  text: string;
+  platform: 'youtube' | 'twitch' | 'kick';
+  timestamp: number;
+}
+
+export interface CommentListenerState {
+  url: string;
+  platform: 'youtube' | 'twitch' | 'kick' | 'none';
+  targetId: string;
+  label: string;
+  active: boolean;
+  npcCount: number; // 0 to 6 NPCs
+  recentComments: StreamCommentItem[]; // Comments currently displayed that NPCs sample random words from
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -137,6 +155,7 @@ export interface RoomStatePayload {
   players: Record<string, PlayerState>;
   seats: Record<string, string>; // seatId -> playerId
   tvState: TVMediaState;
+  commentListener: CommentListenerState;
   messages: ChatMessage[];
 }
 

@@ -17,9 +17,11 @@ import {
   RefreshCw,
   Rewind,
   FastForward,
+  MessageSquare,
+  Users,
 } from 'lucide-react';
 import { useGameStore, tvPlayerBridge } from '../../store/useGameStore';
-import { CURATED_MEDIA_PRESETS, parseMediaUrl } from '../../../shared/mediaParser';
+import { CURATED_MEDIA_PRESETS, parseCommentSourceUrl, parseMediaUrl } from '../../../shared/mediaParser';
 import { soundFX } from '../../utils/soundEffects';
 
 export const CinemaControlModal: React.FC = () => {
@@ -35,6 +37,9 @@ export const CinemaControlModal: React.FC = () => {
   const tvEmbedError = useGameStore((s) => s.tvEmbedError);
   const tvInteractiveMode = useGameStore((s) => s.tvInteractiveMode);
   const setTVInteractiveMode = useGameStore((s) => s.setTVInteractiveMode);
+  const commentListener = useGameStore((s) => s.commentListener);
+  const configureCommentListener = useGameStore((s) => s.configureCommentListener);
+  const addToast = useGameStore((s) => s.addToast);
 
   const [inputUrl, setInputUrl] = useState('');
   const [customTitle, setCustomTitle] = useState('');
@@ -43,6 +48,8 @@ export const CinemaControlModal: React.FC = () => {
   const [localError, setLocalError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncFlash, setSyncFlash] = useState(false);
+  const [commentUrlInput, setCommentUrlInput] = useState('');
+  const [commentLoading, setCommentLoading] = useState(false);
 
   const isHost = hostId === myPlayerId;
   const canControl = isHost || tvState.allowGuestsControl;
@@ -121,6 +128,31 @@ export const CinemaControlModal: React.FC = () => {
       tvPlayerBridge.syncToServerNow();
     }
     triggerSyncFlash();
+  };
+
+  const handleApplyCommentUrl = async (targetUrl?: string) => {
+    const raw = (targetUrl ?? commentUrlInput).trim();
+    if (!raw) return;
+    const parsed = parseCommentSourceUrl(raw);
+    if (!parsed.valid) {
+      setLocalError(parsed.error || 'Link de comentários inválido.');
+      return;
+    }
+    soundFX.playClick();
+    setCommentLoading(true);
+    const res = await configureCommentListener({ url: raw, active: true });
+    setCommentLoading(false);
+    if (!res.ok) {
+      setLocalError(res.error || 'Falha ao conectar ouvidor.');
+    } else {
+      setCommentUrlInput('');
+      addToast(`Ouvidor conectado: ${parsed.label}`, 'success');
+    }
+  };
+
+  const handleSetNpcCount = async (count: number) => {
+    soundFX.playClick();
+    await configureCommentListener({ npcCount: count });
   };
 
   const platformBadgeLabel = (p: string) => {
@@ -483,6 +515,111 @@ export const CinemaControlModal: React.FC = () => {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Compact Comment Listener & 0-6 Spectator NPCs */}
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-white/10 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 truncate">
+                  Ouvidor de Comentários & NPCs
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[9px] text-slate-300 truncate max-w-[180px]">
+                {commentListener?.label || 'Desconectado'}
+              </span>
+            </div>
+
+            {/* Comment Listener URL Input */}
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={commentUrlInput}
+                onChange={(e) => setCommentUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleApplyCommentUrl();
+                  }
+                }}
+                placeholder={commentListener?.url || 'Link do chat (Twitch, YouTube ou Kick)...'}
+                className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950/90 border border-white/12 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="button"
+                disabled={commentLoading || !commentUrlInput.trim()}
+                onClick={() => handleApplyCommentUrl()}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-[10px] shrink-0 transition"
+              >
+                {commentLoading ? '...' : 'Ouvir'}
+              </button>
+            </div>
+
+            {/* Quick Presets for Comment Listener (Cellbit Twitch / YouTube / Current TV) */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">
+                Exemplos:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleApplyCommentUrl('https://www.twitch.tv/cellbit')}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition ${
+                  commentListener?.url === 'https://www.twitch.tv/cellbit'
+                    ? 'bg-violet-500/25 border-violet-400 text-violet-200'
+                    : 'bg-slate-800/80 border-white/10 text-slate-300 hover:border-violet-400/50'
+                }`}
+              >
+                Twitch: Cellbit
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyCommentUrl('https://www.youtube.com/watch?v=yznJwqZt1DY')}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition ${
+                  commentListener?.url === 'https://www.youtube.com/watch?v=yznJwqZt1DY'
+                    ? 'bg-rose-500/25 border-rose-400 text-rose-200'
+                    : 'bg-slate-800/80 border-white/10 text-slate-300 hover:border-rose-400/50'
+                }`}
+              >
+                YouTube: Cellbit
+              </button>
+              {tvState.platform !== 'ambient' && tvState.url && (
+                <button
+                  type="button"
+                  onClick={() => handleApplyCommentUrl(tvState.url)}
+                  className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-800/80 border border-white/10 text-amber-300 hover:border-amber-400/50 transition"
+                >
+                  Usar Link da TV
+                </button>
+              )}
+            </div>
+
+            {/* 0 to 6 NPC Selector */}
+            <div className="pt-2 border-t border-white/8 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-200">
+                <Users className="w-3.5 h-3.5 text-amber-400" />
+                <span>NPCs no Lounge (0 a 6):</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {[0, 1, 2, 3, 4, 5, 6].map((num) => {
+                  const active = (commentListener?.npcCount ?? 3) === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleSetNpcCount(num)}
+                      className={`w-6 h-6 rounded-lg text-[10px] font-bold border transition ${
+                        active
+                          ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-sm'
+                          : 'bg-slate-800/80 text-slate-300 border-white/10 hover:bg-slate-700'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

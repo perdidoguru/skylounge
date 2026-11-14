@@ -1,4 +1,4 @@
-import { MediaPlatform, TVMediaState } from './types.js';
+import { CommentListenerState, MediaPlatform, TVMediaState } from './types.js';
 
 export interface ParsedMediaResult {
   valid: boolean;
@@ -23,6 +23,24 @@ export interface MediaPreset {
 
 export const CURATED_MEDIA_PRESETS: MediaPreset[] = [
   {
+    id: 'preset-cellbit-twitch',
+    title: 'Cellbit — Live & Chat na Twitch',
+    subtitle: 'Canal Oficial do Cellbit na Twitch',
+    platform: 'twitch',
+    url: 'https://www.twitch.tv/cellbit',
+    isLive: true,
+    badge: 'Twitch • Cellbit',
+  },
+  {
+    id: 'preset-cellbit-yt',
+    title: 'Cellbit — Ordem Paranormal / YouTube',
+    subtitle: 'Vídeo com Comentários Reais no YouTube',
+    platform: 'youtube',
+    url: 'https://www.youtube.com/watch?v=yznJwqZt1DY',
+    isLive: false,
+    badge: 'YouTube • Cellbit',
+  },
+  {
     id: 'preset-ambient',
     title: 'SkyLounge Synthwave & City Visualizer',
     subtitle: 'Visualizador Nativo 3D c/ Áudio Lo-Fi Sintetizado (Zero Bloqueio)',
@@ -30,24 +48,6 @@ export const CURATED_MEDIA_PRESETS: MediaPreset[] = [
     url: 'skylounge://ambient',
     isLive: true,
     badge: '3D Nativo',
-  },
-  {
-    id: 'preset-lofi-live',
-    title: 'Lofi Girl — Beats to Relax/Study To',
-    subtitle: 'YouTube Live 24/7 Stream',
-    platform: 'youtube_live',
-    url: 'https://www.youtube.com/live/jfKfPfyJRdk',
-    isLive: true,
-    badge: 'YouTube Live',
-  },
-  {
-    id: 'preset-nasa-live',
-    title: 'NASA Live — Earth From Space (ISS)',
-    subtitle: 'Transmissão Ao Vivo Oficial NASA',
-    platform: 'youtube_live',
-    url: 'https://www.youtube.com/watch?v=xRPjKQtRXR8',
-    isLive: true,
-    badge: 'YouTube Live',
   },
   {
     id: 'preset-blender-sintel',
@@ -59,13 +59,13 @@ export const CURATED_MEDIA_PRESETS: MediaPreset[] = [
     badge: 'YouTube VOD',
   },
   {
-    id: 'preset-coffee-jazz',
-    title: 'Tokyo Night Walk 4K HDR',
-    subtitle: 'Vídeo YouTube Sob Demanda',
-    platform: 'youtube',
-    url: 'https://www.youtube.com/watch?v=eZe4Q_58UTU',
-    isLive: false,
-    badge: 'YouTube 4K',
+    id: 'preset-nasa-live',
+    title: 'NASA Live — Earth From Space (ISS)',
+    subtitle: 'Transmissão Ao Vivo Oficial NASA',
+    platform: 'youtube_live',
+    url: 'https://www.youtube.com/watch?v=xRPjKQtRXR8',
+    isLive: true,
+    badge: 'YouTube Live',
   },
   {
     id: 'preset-twitch-monstercat',
@@ -102,6 +102,102 @@ export const DEFAULT_TV_STATE: TVMediaState = {
   allowGuestsControl: true,
   seq: 1,
 };
+
+export const DEFAULT_COMMENT_LISTENER_STATE: CommentListenerState = {
+  url: 'https://www.twitch.tv/cellbit',
+  platform: 'twitch',
+  targetId: 'cellbit',
+  label: 'Twitch • cellbit',
+  active: true,
+  npcCount: 3,
+  recentComments: [],
+};
+
+export function parseCommentSourceUrl(rawInput: string): {
+  valid: boolean;
+  platform: 'youtube' | 'twitch' | 'kick';
+  targetId: string;
+  url: string;
+  label: string;
+  error?: string;
+} {
+  const trimmed = (rawInput || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      platform: 'twitch',
+      targetId: '',
+      url: '',
+      label: '',
+      error: 'Informe um link do YouTube, Twitch ou Kick.',
+    };
+  }
+
+  // Allow bare channel names like "cellbit" as Twitch channel shortcut
+  if (/^[a-zA-Z0-9_]{2,28}$/.test(trimmed) && !trimmed.includes('.')) {
+    const ch = trimmed.toLowerCase();
+    return {
+      valid: true,
+      platform: 'twitch',
+      targetId: ch,
+      url: `https://www.twitch.tv/${ch}`,
+      label: `Twitch • ${ch}`,
+    };
+  }
+
+  const parsed = parseMediaUrl(trimmed);
+  if (!parsed.valid) {
+    return {
+      valid: false,
+      platform: 'youtube',
+      targetId: '',
+      url: trimmed,
+      label: '',
+      error: parsed.error || 'Link inválido para o ouvidor de comentários.',
+    };
+  }
+
+  if (parsed.platform === 'youtube' || parsed.platform === 'youtube_live') {
+    return {
+      valid: true,
+      platform: 'youtube',
+      targetId: parsed.videoId,
+      url: parsed.url,
+      label: `YouTube • ${parsed.videoId}`,
+    };
+  }
+
+  if (parsed.platform === 'twitch') {
+    const ch = parsed.channel || 'cellbit';
+    return {
+      valid: true,
+      platform: 'twitch',
+      targetId: ch,
+      url: `https://www.twitch.tv/${ch}`,
+      label: `Twitch • ${ch}`,
+    };
+  }
+
+  if (parsed.platform === 'kick') {
+    const ch = parsed.channel || 'xqc';
+    return {
+      valid: true,
+      platform: 'kick',
+      targetId: ch,
+      url: `https://kick.com/${ch}`,
+      label: `Kick • ${ch}`,
+    };
+  }
+
+  return {
+    valid: false,
+    platform: 'youtube',
+    targetId: '',
+    url: trimmed,
+    label: '',
+    error: 'Use um link do YouTube, Twitch ou Kick para o ouvidor de comentários.',
+  };
+}
 
 /**
  * Parses and normalizes user-submitted media URLs across:
@@ -160,7 +256,12 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
   const pathname = parsedUrl.pathname;
 
   // 1. YOUTUBE & YOUTUBE LIVE
-  if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com' || host === 'youtu.be') {
+  if (
+    host === 'youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'music.youtube.com' ||
+    host === 'youtu.be'
+  ) {
     let videoId = '';
     let isLiveStream = Boolean(forceLive);
 
@@ -177,7 +278,6 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
       videoId = pathname.replace('/shorts/', '').split('/')[0] || '';
     }
 
-    // Validate YouTube ID (typically 11 chars alphanumeric + - _)
     const cleanId = videoId.replace(/[^a-zA-Z0-9_-]/g, '');
     if (!cleanId || cleanId.length < 6) {
       return {
@@ -192,7 +292,6 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
       };
     }
 
-    // Check if preset matches for nicer title
     const matchingPreset = CURATED_MEDIA_PRESETS.find((p) => p.url.includes(cleanId));
     if (matchingPreset?.isLive) {
       isLiveStream = true;
@@ -209,7 +308,9 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
       url: normalizedUrl,
       videoId: cleanId,
       channel: '',
-      title: matchingPreset?.title || (isLiveStream ? `YouTube Live (${cleanId})` : `YouTube Video (${cleanId})`),
+      title:
+        matchingPreset?.title ||
+        (isLiveStream ? `YouTube Live (${cleanId})` : `YouTube Video (${cleanId})`),
       isLive: isLiveStream,
     };
   }
@@ -240,7 +341,7 @@ export function parseMediaUrl(rawInput: string, forceLive?: boolean): ParsedMedi
         channel: '',
         title: '',
         isLive: false,
-        error: 'Informe um canal válido da Twitch (ex: https://www.twitch.tv/monstercat).',
+        error: 'Informe um canal válido da Twitch (ex: https://www.twitch.tv/cellbit).',
       };
     }
 

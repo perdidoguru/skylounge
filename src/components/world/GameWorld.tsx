@@ -8,6 +8,7 @@ import { CinemaTV } from './CinemaTV';
 import { SeatingSystem } from './SeatingSystem';
 import { PlayerController } from '../controllers/PlayerController';
 import { RemotePlayers } from './RemotePlayers';
+import { CommentNPCs } from './CommentNPCs';
 
 export const GameWorld: React.FC = () => {
   const quality = useGameStore((s) => s.settings.graphicsQuality);
@@ -95,6 +96,9 @@ export const GameWorld: React.FC = () => {
 
           {/* Interpolated Remote Multiplayer Participants */}
           <RemotePlayers />
+
+          {/* 0 to 6 Spectator NPCs that react with random words from active stream comments */}
+          <CommentNPCs />
         </Canvas>
       </div>
     </div>

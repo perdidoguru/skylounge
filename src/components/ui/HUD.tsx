@@ -16,9 +16,13 @@ import {
   MousePointerClick,
   Eye,
   EyeOff,
+  Radio,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { SEAT_MAP } from '../../../shared/seats';
+import { parseCommentSourceUrl } from '../../../shared/mediaParser';
 import { ChatPanel } from './ChatPanel';
 import { CinemaControlModal } from './CinemaControlModal';
 import { ParticipantsModal } from './ParticipantsModal';
@@ -48,9 +52,13 @@ export const HUD: React.FC = () => {
   const leaveRoom = useGameStore((s) => s.leaveRoom);
   const addToast = useGameStore((s) => s.addToast);
   const toasts = useGameStore((s) => s.toasts);
+  const commentListener = useGameStore((s) => s.commentListener);
+  const configureCommentListener = useGameStore((s) => s.configureCommentListener);
 
   const [minimalZenMode, setMinimalZenMode] = useState(false);
   const [showSeatedHint, setShowSeatedHint] = useState(false);
+  const [commentFeedOpen, setCommentFeedOpen] = useState(true);
+  const [hudCommentUrl, setHudCommentUrl] = useState('');
 
   const playerCount = Object.keys(players).length;
   const isHost = myPlayerId === hostId;
@@ -358,6 +366,173 @@ export const HUD: React.FC = () => {
       {!minimalZenMode && (
         <div className="fixed bottom-0 left-0 pointer-events-auto">
           <ChatPanel />
+        </div>
+      )}
+
+      {/* Compact Comment Listener & 0-6 NPC Widget (Bottom-Right) */}
+      {!minimalZenMode && (
+        <div className="fixed bottom-3 right-3 z-20 pointer-events-auto flex flex-col items-end">
+          {!commentFeedOpen ? (
+            <button
+              type="button"
+              onClick={() => {
+                soundFX.playClick();
+                setCommentFeedOpen(true);
+              }}
+              className="h-8 px-3 rounded-full bg-slate-950/55 hover:bg-slate-950/85 border border-white/10 backdrop-blur-md shadow-lg flex items-center gap-2 text-[11px] text-slate-200 hover:text-amber-300 opacity-75 hover:opacity-100 transition"
+              title="Abrir Ouvidor de Comentários & NPCs"
+            >
+              <Radio className="w-3.5 h-3.5 text-amber-400" />
+              <span className="truncate max-w-[130px] font-medium">
+                {commentListener?.label || 'Ouvidor'}
+              </span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                {commentListener?.npcCount ?? 0} NPCs
+              </span>
+              <ChevronUp className="w-3 h-3 opacity-70" />
+            </button>
+          ) : (
+            <div className="w-64 sm:w-72 rounded-2xl bg-slate-950/65 hover:bg-slate-950/85 border border-white/10 backdrop-blur-md shadow-xl overflow-hidden flex flex-col text-[11px] opacity-85 hover:opacity-100 transition-all duration-200">
+              {/* Compact Header */}
+              <div className="px-2.5 py-1.5 bg-slate-900/60 border-b border-white/10 flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Radio className="w-3 h-3 text-amber-400 shrink-0 animate-pulse" />
+                  <span className="font-display font-bold text-[10px] text-white truncate">
+                    {commentListener?.label || 'Ouvidor de Comentários'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFX.playClick();
+                    setCommentFeedOpen(false);
+                  }}
+                  className="p-0.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+                  title="Minimizar Ouvidor"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Compact URL Input & Presets */}
+              <div className="p-2 border-b border-white/8 space-y-1.5">
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const raw = hudCommentUrl.trim();
+                    if (!raw) return;
+                    const parsed = parseCommentSourceUrl(raw);
+                    if (!parsed.valid) {
+                      addToast(parsed.error || 'Link inválido', 'warning');
+                      return;
+                    }
+                    soundFX.playClick();
+                    await configureCommentListener({ url: raw, active: true });
+                    setHudCommentUrl('');
+                    addToast(`Ouvindo: ${parsed.label}`, 'success');
+                  }}
+                  className="flex gap-1"
+                >
+                  <input
+                    type="text"
+                    value={hudCommentUrl}
+                    onChange={(e) => setHudCommentUrl(e.target.value)}
+                    placeholder="Link Twitch / YouTube / Kick..."
+                    className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-950/80 border border-white/10 text-[10px] text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  />
+                  <button
+                    type="submit"
+                    className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] shrink-0 transition"
+                  >
+                    OK
+                  </button>
+                </form>
+
+                {/* Quick Example Presets + 0..6 NPC Selector */}
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFX.playClick();
+                        configureCommentListener({
+                          url: 'https://www.twitch.tv/cellbit',
+                          active: true,
+                        });
+                      }}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${
+                        commentListener?.url === 'https://www.twitch.tv/cellbit'
+                          ? 'bg-violet-500/25 border-violet-400 text-violet-200'
+                          : 'bg-slate-900/70 border-white/10 text-slate-300 hover:text-white'
+                      }`}
+                      title="Ouvir chat da Twitch do Cellbit"
+                    >
+                      Twitch Cellbit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFX.playClick();
+                        configureCommentListener({
+                          url: 'https://www.youtube.com/watch?v=yznJwqZt1DY',
+                          active: true,
+                        });
+                      }}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${
+                        commentListener?.url === 'https://www.youtube.com/watch?v=yznJwqZt1DY'
+                          ? 'bg-rose-500/25 border-rose-400 text-rose-200'
+                          : 'bg-slate-900/70 border-white/10 text-slate-300 hover:text-white'
+                      }`}
+                      title="Ouvir comentários do YouTube do Cellbit"
+                    >
+                      YT Cellbit
+                    </button>
+                  </div>
+
+                  {/* Compact 0-6 NPC selector */}
+                  <div className="flex items-center gap-0.5" title="Quantidade de NPCs (0 a 6)">
+                    <span className="text-[9px] text-slate-400 mr-0.5">NPC:</span>
+                    {[0, 1, 2, 3, 4, 5, 6].map((n) => {
+                      const active = (commentListener?.npcCount ?? 3) === n;
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            soundFX.playClick();
+                            configureCommentListener({ npcCount: n });
+                          }}
+                          className={`w-4 h-4 rounded text-[9px] font-bold transition ${
+                            active
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'bg-slate-900/70 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Comments Currently Shown (NPCs pick random words from these!) */}
+              <div className="px-2.5 py-1.5 max-h-28 overflow-y-auto space-y-1">
+                {(commentListener?.recentComments || []).slice(-4).map((c) => (
+                  <div key={c.id} className="text-[10px] leading-snug truncate">
+                    <span className="font-semibold text-amber-300/90 mr-1">{c.author}:</span>
+                    <span className="text-slate-200/90">{c.text}</span>
+                  </div>
+                ))}
+                {(!commentListener?.recentComments ||
+                  commentListener.recentComments.length === 0) && (
+                  <div className="text-[10px] text-slate-500 italic">
+                    Aguardando comentários...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

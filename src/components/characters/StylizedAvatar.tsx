@@ -1614,25 +1614,26 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         </group>
       </group>
 
-      {/* OVERHEAD NAME TAG & SPEECH BUBBLE */}
+      {/* OVERHEAD NAME TAG & COMPACT SPEECH BUBBLE */}
       {showLabel && !previewMode && (
         <Html
-          position={[0, 1.96, 0]}
+          position={[0, 1.88, 0]}
           center
           distanceFactor={9}
           zIndexRange={[10, 0]}
           style={{ pointerEvents: 'none' }}
         >
-          <div className="flex flex-col items-center gap-1 select-none pointer-events-none">
+          <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none">
             {activeBubbleText && (
-              <div className="max-w-[200px] px-2.5 py-1 rounded-xl bg-slate-950/75 border border-amber-400/30 text-[11px] text-slate-100 font-medium shadow-lg backdrop-blur-md">
+              <div className="relative max-w-[148px] px-2 py-0.5 rounded-lg bg-slate-950/78 border border-amber-400/35 text-[10px] leading-tight text-slate-100 font-medium shadow-md backdrop-blur-md text-center">
                 {activeBubbleText}
+                <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-1.5 h-1.5 rotate-45 bg-slate-950/78 border-r border-b border-amber-400/35" />
               </div>
             )}
             {!(isLocal && animation === 'sit') && (
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950/45 border border-white/10 backdrop-blur-sm shadow-sm whitespace-nowrap opacity-75">
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-950/45 border border-white/10 backdrop-blur-sm shadow-sm whitespace-nowrap opacity-70">
                 {isHost && (
-                  <span className="text-[9px] text-amber-400" title="Anfitrião da Sala">
+                  <span className="text-[8px] text-amber-400" title="Anfitrião da Sala">
                     👑
                   </span>
                 )}
@@ -1641,7 +1642,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
                   style={{ backgroundColor: customization.primaryColor }}
                 />
                 <span
-                  className={`text-[10px] font-medium tracking-wide ${
+                  className={`text-[9px] font-medium tracking-wide ${
                     isLocal ? 'text-amber-300/90' : 'text-slate-100/90'
                   }`}
                 >

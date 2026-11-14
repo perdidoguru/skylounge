@@ -4,6 +4,7 @@ import {
   AnimationState,
   AvatarCustomization,
   ChatMessage,
+  CommentListenerState,
   GraphicsQuality,
   PlayerState,
   RoomStatePayload,
@@ -11,7 +12,7 @@ import {
   TVMediaState,
   TVSyncPulse,
 } from '../../shared/types';
-import { DEFAULT_TV_STATE } from '../../shared/mediaParser';
+import { DEFAULT_COMMENT_LISTENER_STATE, DEFAULT_TV_STATE } from '../../shared/mediaParser';
 import { soundFX } from '../utils/soundEffects';
 
 const STORAGE_KEY_CUSTOMIZATION = 'skylounge_avatar_v1';
@@ -113,6 +114,7 @@ interface GameStore {
   players: Record<string, PlayerState>;
   seats: Record<string, string>; // seatId -> playerId
   tvState: TVMediaState;
+  commentListener: CommentListenerState;
   messages: ChatMessage[];
 
   // Local Player State
@@ -170,6 +172,11 @@ interface GameStore {
     syncEnabled?: boolean
   ) => void;
   sendHostSync: (playbackTime: number, isPlaying: boolean, isLive?: boolean) => void;
+  configureCommentListener: (opts: {
+    url?: string;
+    npcCount?: number;
+    active?: boolean;
+  }) => Promise<{ ok: boolean; error?: string }>;
   sendChatMessage: (text: string) => void;
   kickPlayer: (targetPlayerId: string) => void;
   transferHost: (targetPlayerId: string) => void;
@@ -199,6 +206,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   players: {},
   seats: {},
   tvState: DEFAULT_TV_STATE,
+  commentListener: DEFAULT_COMMENT_LISTENER_STATE,
   messages: [],
 
   customization: loadInitialCustomization(),
@@ -277,6 +285,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         players: payload.players,
         seats: payload.seats,
         tvState: payload.tvState,
+        commentListener: payload.commentListener || DEFAULT_COMMENT_LISTENER_STATE,
         messages: payload.messages,
         mySeatId: me?.seatId || null,
         tvEmbedError: null,
@@ -429,6 +438,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     socket.on('tv:updated', (tvState: TVMediaState) => {
       set({ tvState, tvEmbedError: null });
+    });
+
+    socket.on('comments:updated', (commentListener: CommentListenerState) => {
+      set({ commentListener });
     });
 
     socket.on('tv:syncPulse', (pulse: TVSyncPulse) => {
@@ -679,6 +692,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { socket, inGame } = get();
     if (!socket || !inGame) return;
     socket.emit('tv:hostSync', { playbackTime, isPlaying, isLive });
+  },
+
+  configureCommentListener: (opts) => {
+    return new Promise((resolve) => {
+      const { socket, inGame } = get();
+      if (!socket || !inGame) {
+        resolve({ ok: false, error: 'Sem conexão com a sala.' });
+        return;
+      }
+      socket.emit(
+        'comments:configure',
+        opts,
+        (res: { ok: boolean; error?: string; state?: CommentListenerState }) => {
+          if (res?.ok && res.state) {
+            set({ commentListener: res.state });
+          }
+          resolve(res || { ok: false, error: 'Falha ao atualizar ouvidor de comentários.' });
+        }
+      );
+    });
   },
 
   sendChatMessage: (text) => {
