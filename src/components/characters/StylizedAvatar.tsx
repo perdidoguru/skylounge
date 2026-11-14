@@ -1663,11 +1663,14 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             zIndexRange={[10, 0]}
             style={{ pointerEvents: 'none' }}
           >
-            <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none">
+            <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none w-max">
               {activeBubbleText && (
-                <div className="relative max-w-[180px] px-2 py-0.5 rounded-lg bg-slate-950/80 border border-amber-400/35 text-[10px] leading-snug text-slate-100 font-medium shadow-md backdrop-blur-md text-center break-words">
+                <div
+                  style={{ width: 'max-content', maxWidth: '235px' }}
+                  className="relative w-max max-w-[235px] px-2.5 py-1 rounded-lg bg-slate-950/82 border border-amber-400/35 text-[10px] leading-tight text-slate-100 font-medium shadow-md backdrop-blur-md text-center whitespace-normal break-words"
+                >
                   {activeBubbleText}
-                  <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-1.5 h-1.5 rotate-45 bg-slate-950/80 border-r border-b border-amber-400/35" />
+                  <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-1.5 h-1.5 rotate-45 bg-slate-950/82 border-r border-b border-amber-400/35" />
                 </div>
               )}
               {!(isLocal && animation === 'sit') && (

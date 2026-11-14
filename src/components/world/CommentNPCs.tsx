@@ -206,11 +206,14 @@ export const CommentNPCs: React.FC = () => {
       recentContentMapRef.current.set(normalizeKey(txt), now);
     }
 
-    // Each active NPC picks a random message from the filtered 3s chunk (without reserving already-chosen ones)
-    const timers = NPC_PRESETS.slice(0, npcCount).map((npc, idx) =>
+    // Shuffle both active NPCs and valid chunk messages so each speaking NPC shows a distinct message from the chunk
+    const shuffledNpcs = [...NPC_PRESETS.slice(0, npcCount)].sort(() => Math.random() - 0.5);
+    const shuffledMessages = [...validChunkTexts].sort(() => Math.random() - 0.5);
+    const speakersCount = Math.min(shuffledNpcs.length, shuffledMessages.length);
+
+    const timers = shuffledNpcs.slice(0, speakersCount).map((npc, idx) =>
       setTimeout(() => {
-        const pickedText =
-          validChunkTexts[Math.floor(Math.random() * validChunkTexts.length)];
+        const pickedText = shuffledMessages[idx];
         if (!pickedText) return;
         setNpcBubbles((prev) => ({
           ...prev,
