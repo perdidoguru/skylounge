@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { SEAT_MAP } from '../../../shared/seats';
 import { AvatarCustomization, StreamCommentItem } from '../../../shared/types';
@@ -11,11 +11,12 @@ interface NPCPreset {
 }
 
 const MAX_BUBBLE_CHARS = 55;
+const CLIENT_DEDUP_WINDOW_MS = 20_000;
 
 const NPC_PRESETS: NPCPreset[] = [
   {
     id: 'npc-1',
-    preferredSeats: ['pouf-cinema-1', 'cushion-floor-1', 'sofa-main-1', 'sofa-vip-1'],
+    preferredSeats: ['pouf-cinema-1', 'sofa-main-1', 'sofa-vip-1', 'lounge-west-1'],
     customization: {
       name: 'Luna',
       bodyStyle: 'feminine',
@@ -30,7 +31,7 @@ const NPC_PRESETS: NPCPreset[] = [
   },
   {
     id: 'npc-2',
-    preferredSeats: ['sofa-main-4', 'sofa-wing-r1', 'pouf-cinema-3', 'sofa-vip-3'],
+    preferredSeats: ['sofa-main-4', 'sofa-wing-r1', 'sofa-vip-3', 'bar-stool-1'],
     customization: {
       name: 'Kael',
       bodyStyle: 'masculine',
@@ -45,7 +46,7 @@ const NPC_PRESETS: NPCPreset[] = [
   },
   {
     id: 'npc-3',
-    preferredSeats: ['sofa-wing-l1', 'sofa-main-2', 'cushion-floor-2', 'armchair-w-1'],
+    preferredSeats: ['sofa-wing-l1', 'sofa-main-2', 'sofa-vip-2', 'lounge-west-2'],
     customization: {
       name: 'Maya',
       bodyStyle: 'feminine',
@@ -60,7 +61,7 @@ const NPC_PRESETS: NPCPreset[] = [
   },
   {
     id: 'npc-4',
-    preferredSeats: ['pouf-cinema-3', 'sofa-wing-r2', 'sofa-vip-2', 'bar-stool-2'],
+    preferredSeats: ['pouf-cinema-3', 'sofa-wing-r2', 'sofa-vip-3', 'bar-stool-2'],
     customization: {
       name: 'Dante',
       bodyStyle: 'masculine',
@@ -75,7 +76,7 @@ const NPC_PRESETS: NPCPreset[] = [
   },
   {
     id: 'npc-5',
-    preferredSeats: ['cushion-floor-2', 'pouf-cinema-2', 'sofa-wing-l2', 'sofa-vip-1'],
+    preferredSeats: ['pouf-cinema-2', 'sofa-wing-l2', 'sofa-vip-1', 'lounge-west-3'],
     customization: {
       name: 'Nina',
       bodyStyle: 'feminine',
@@ -90,7 +91,7 @@ const NPC_PRESETS: NPCPreset[] = [
   },
   {
     id: 'npc-6',
-    preferredSeats: ['sofa-wing-r1', 'sofa-vip-3', 'sofa-main-1', 'armchair-w-2'],
+    preferredSeats: ['sofa-wing-r1', 'sofa-vip-2', 'sofa-main-3', 'bar-stool-3'],
     customization: {
       name: 'Zion',
       bodyStyle: 'masculine',
@@ -105,27 +106,54 @@ const NPC_PRESETS: NPCPreset[] = [
   },
 ];
 
-/**
- * Picks a random message from the current 3-second chunk without reserving already-chosen
- * messages, and truncates it to MAX_BUBBLE_CHARS so viewers can see what chat is talking about right now.
- */
-function pickRandomMessageFromChunk(chunk: StreamCommentItem[]): string | null {
-  if (!chunk || chunk.length === 0) return null;
+function cleanAndFilterClientComment(rawText: string): string | null {
+  if (!rawText) return null;
+  if (rawText.includes('@') || rawText.trim().startsWith('!')) return null;
 
-  const picked = chunk[Math.floor(Math.random() * chunk.length)];
-  if (!picked || !picked.text) return null;
-
-  const cleaned = picked.text
-    .replace(/https?:\/\/\S+/gi, '')
+  let text = rawText
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/:[a-zA-Z0-9_+-]{2,32}:/g, ' ')
+    .replace(/\b[a-z]{2,15}[A-Z][a-zA-Z0-9_]*\b/g, ' ')
+    .replace(/\b[A-Z][a-z]{2,12}[A-Z][a-zA-Z0-9_]*\b/g, ' ')
+    .replace(
+      /\b(LUL|LULW|OMEGALUL|KEKW|KAPPA|POG|POGGERS|POGCHAMP|PEPEGA|SADGE|CLAP|AYAYA|BIBLETHUMP|4HEAD|KREYGASM|RESIDENTSLEEPER|NOTLIKETHIS|WUTFACE|DANSGAME|SMORC|BABYRAGE|PJSALT|MONKAS|MONKAW|CATJAM|PEPEJAM)\b/gi,
+      ' '
+    )
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleaned) return null;
+  if (!text) return null;
 
-  if (cleaned.length <= MAX_BUBBLE_CHARS) {
-    return cleaned;
+  // Collapse repeated consecutive words
+  const words = text.split(' ');
+  const deduped: string[] = [];
+  for (const w of words) {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || prev.toLowerCase() !== w.toLowerCase()) {
+      deduped.push(w);
+    }
   }
-  return `${cleaned.slice(0, MAX_BUBBLE_CHARS - 1).trim()}…`;
+
+  if (words.length >= 2 && deduped.length === 1) return null;
+
+  const finalStr = deduped.join(' ').trim();
+  if (finalStr.length < 2) return null;
+
+  if (finalStr.length <= MAX_BUBBLE_CHARS) {
+    return finalStr;
+  }
+  return `${finalStr.slice(0, MAX_BUBBLE_CHARS - 1).trim()}…`;
+}
+
+function normalizeKey(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/(.)\1{2,}/g, '$1$1')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export const CommentNPCs: React.FC = () => {
@@ -139,25 +167,59 @@ export const CommentNPCs: React.FC = () => {
     Record<string, { text: string; timestamp: number }>
   >({});
 
-  // Whenever a new 3-second chunk of messages arrives, each active NPC randomly picks a message from that chunk
+  // Rolling deduplication map so identical content is never repeated in recent seconds
+  const recentContentMapRef = useRef<Map<string, number>>(new Map());
+
+  // Whenever a new 3-second chunk of messages arrives, filter out @, emotes, and recent duplicates, then pick randomly
   useEffect(() => {
     if (npcCount <= 0 || recentComments.length === 0) {
       setNpcBubbles({});
       return;
     }
 
+    const now = Date.now();
+    for (const [k, ts] of recentContentMapRef.current.entries()) {
+      if (now - ts > CLIENT_DEDUP_WINDOW_MS) {
+        recentContentMapRef.current.delete(k);
+      }
+    }
+
+    // Build clean, unique candidate messages from the current 3-second chunk
+    const validChunkTexts: string[] = [];
+    const seenInThisChunk = new Set<string>();
+
+    for (const item of recentComments) {
+      const cleaned = cleanAndFilterClientComment(item.text);
+      if (!cleaned) continue;
+      const key = normalizeKey(cleaned);
+      if (!key || seenInThisChunk.has(key) || recentContentMapRef.current.has(key)) {
+        continue;
+      }
+      seenInThisChunk.add(key);
+      validChunkTexts.push(cleaned);
+    }
+
+    if (validChunkTexts.length === 0) return;
+
+    // Record these chunk messages in the recent deduplication window
+    for (const txt of validChunkTexts) {
+      recentContentMapRef.current.set(normalizeKey(txt), now);
+    }
+
+    // Each active NPC picks a random message from the filtered 3s chunk (without reserving already-chosen ones)
     const timers = NPC_PRESETS.slice(0, npcCount).map((npc, idx) =>
       setTimeout(() => {
-        const msgText = pickRandomMessageFromChunk(recentComments);
-        if (!msgText) return;
+        const pickedText =
+          validChunkTexts[Math.floor(Math.random() * validChunkTexts.length)];
+        if (!pickedText) return;
         setNpcBubbles((prev) => ({
           ...prev,
           [npc.id]: {
-            text: msgText,
+            text: pickedText,
             timestamp: Date.now(),
           },
         }));
-      }, idx * 280)
+      }, idx * 240)
     );
 
     return () => {

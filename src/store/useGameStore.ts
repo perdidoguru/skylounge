@@ -624,27 +624,61 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   sitOnSeat: (seatId) => {
-    const { socket, inGame } = get();
+    const { socket, inGame, seats, myPlayerId } = get();
     if (!socket || !inGame) return;
+    const occupant = seats[seatId];
+    if (occupant && occupant !== myPlayerId) {
+      get().addToast('Este lugar já está ocupado por outro jogador.', 'warning');
+      return;
+    }
+
+    const prevSeatId = get().mySeatId;
+    soundFX.playSit(true);
+    localPlayerTransform.animation = 'sit';
+    set({
+      mySeatId: seatId,
+      activeEmote: null,
+      seats: { ...seats, [seatId]: myPlayerId },
+    });
+
     socket.emit('seat:sit', { seatId }, (res: { ok: boolean; error?: string }) => {
-      if (res?.ok) {
-        soundFX.playSit(true);
-        set({ mySeatId: seatId, activeEmote: null });
-      } else if (res?.error) {
-        get().addToast(res.error, 'warning');
+      if (!res?.ok) {
+        localPlayerTransform.animation = 'idle';
+        set((state) => {
+          const nextSeats = { ...state.seats };
+          if (nextSeats[seatId] === myPlayerId) {
+            delete nextSeats[seatId];
+          }
+          return {
+            mySeatId: prevSeatId,
+            seats: nextSeats,
+          };
+        });
+        if (res?.error) {
+          get().addToast(res.error, 'warning');
+        }
       }
     });
   },
 
   standUp: (exitPosition) => {
-    const { socket, inGame, mySeatId } = get();
+    const { socket, inGame, mySeatId, myPlayerId } = get();
     if (!mySeatId) return;
     soundFX.playSit(false);
-    set({ mySeatId: null });
     localPlayerTransform.animation = 'idle';
     if (exitPosition) {
       localPlayerTransform.position = [...exitPosition];
     }
+    set((state) => {
+      const nextSeats = { ...state.seats };
+      if (nextSeats[mySeatId] === myPlayerId) {
+        delete nextSeats[mySeatId];
+      }
+      return {
+        mySeatId: null,
+        seats: nextSeats,
+      };
+    });
     if (socket && inGame) {
       socket.emit('seat:stand', { exitPosition });
     }

@@ -1,9 +1,10 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore } from '../../store/useGameStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
-import { PlayerState } from '../../../shared/types';
+import { AnimationState, PlayerState } from '../../../shared/types';
+import { SEAT_MAP } from '../../../shared/seats';
 
 function normalizeAngle(angle: number): number {
   let a = angle;
@@ -18,35 +19,69 @@ const RemotePlayerEntity: React.FC<{ player: PlayerState; isHost: boolean }> = (
 }) => {
   const groupRef = useRef<THREE.Group>(null);
   const initialized = useRef(false);
+  const lastTargetPos = useRef<[number, number, number]>([...player.position]);
+  const lastMovedAt = useRef<number>(performance.now());
+  const [effectiveAnim, setEffectiveAnim] = useState<AnimationState>(player.animation);
 
   useFrame((_state, delta) => {
     const group = groupRef.current;
     if (!group) return;
 
     const dt = Math.min(delta, 0.1);
-    const [tx, ty, tz] = player.position;
+    const now = performance.now();
+
+    const seat = player.seatId ? SEAT_MAP[player.seatId] : null;
+    const [tx, ty, tz] = seat ? seat.position : player.position;
+    const targetRotY = seat ? seat.rotationY : player.rotationY;
 
     if (!initialized.current) {
       group.position.set(tx, ty, tz);
-      group.rotation.y = player.rotationY;
+      group.rotation.y = targetRotY;
+      lastTargetPos.current = [tx, ty, tz];
       initialized.current = true;
       return;
     }
 
-    // Smoothly interpolate position & rotation so remote movement never jitters or teleports
-    group.position.x = THREE.MathUtils.damp(group.position.x, tx, 12, dt);
-    group.position.y = THREE.MathUtils.damp(group.position.y, ty, 12, dt);
-    group.position.z = THREE.MathUtils.damp(group.position.z, tz, 12, dt);
+    // Detect whether target position actually changed recently
+    const movedDist = Math.hypot(
+      tx - lastTargetPos.current[0],
+      ty - lastTargetPos.current[1],
+      tz - lastTargetPos.current[2]
+    );
+    if (movedDist > 0.008) {
+      lastTargetPos.current = [tx, ty, tz];
+      lastMovedAt.current = now;
+    }
 
-    const diffY = normalizeAngle(player.rotationY - group.rotation.y);
-    group.rotation.y += diffY * Math.min(1, dt * 12);
+    // Smoothly interpolate position & rotation so remote movement never jitters or teleports
+    group.position.x = THREE.MathUtils.damp(group.position.x, tx, 14, dt);
+    group.position.y = THREE.MathUtils.damp(group.position.y, ty, 14, dt);
+    group.position.z = THREE.MathUtils.damp(group.position.z, tz, 14, dt);
+
+    const diffY = normalizeAngle(targetRotY - group.rotation.y);
+    group.rotation.y += diffY * Math.min(1, dt * 14);
+
+    // Prevent remote players from ever getting stuck "walking in place" if they stopped moving
+    let nextAnim: AnimationState = seat
+      ? player.animation === 'wave'
+        ? 'wave'
+        : 'sit'
+      : player.animation;
+
+    if ((nextAnim === 'walk' || nextAnim === 'run') && now - lastMovedAt.current > 280) {
+      nextAnim = 'idle';
+    }
+
+    if (nextAnim !== effectiveAnim) {
+      setEffectiveAnim(nextAnim);
+    }
   });
 
   return (
     <group ref={groupRef}>
       <StylizedAvatar
         customization={player.customization}
-        animation={player.animation}
+        animation={effectiveAnim}
         seatId={player.seatId}
         headYaw={player.headYaw}
         headPitch={player.headPitch}

@@ -37,13 +37,13 @@ export const SeatingSystem: React.FC = () => {
             </mesh>
             {/* Invisible click sphere for easy mouse clicking */}
             <mesh
-              position={[0, 0.25, 0]}
+              position={[0, 0.28, 0]}
               onClick={(e) => {
                 e.stopPropagation();
                 sitOnSeat(seat.id);
               }}
             >
-              <sphereGeometry args={[0.38, 8, 8]} />
+              <sphereGeometry args={[0.52, 8, 8]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
           </group>

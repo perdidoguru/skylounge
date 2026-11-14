@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore, localPlayerTransform } from '../../store/useGameStore';
@@ -137,8 +137,21 @@ export const PlayerController: React.FC = () => {
   const smoothedCameraPos = useRef(new THREE.Vector3(0, 3.2, 11.5));
   const smoothedLookTarget = useRef(new THREE.Vector3(0, 1.4, 6.5));
   const currentAnimState = useRef<AnimationState>('idle');
+  const satDownAtRef = useRef(0);
+  const [liveAnimState, setLiveAnimState] = useState<AnimationState>('idle');
 
   const myLastMessage = players[myPlayerId]?.lastMessage;
+
+  // Clear held movement keys when sitting down so held W/Space doesn't immediately stand back up
+  useEffect(() => {
+    if (mySeatId) {
+      satDownAtRef.current = performance.now();
+      keysPressed.current = {};
+      localPlayerTransform.animation = 'sit';
+      currentAnimState.current = 'sit';
+      setLiveAnimState('sit');
+    }
+  }, [mySeatId]);
 
   // Keyboard & Roblox-Style HOLD Right Mouse Button Camera Controls
   useEffect(() => {
@@ -293,19 +306,25 @@ export const PlayerController: React.FC = () => {
     if (mySeatId && SEAT_MAP[mySeatId]) {
       const seat = SEAT_MAP[mySeatId];
 
-      // Allow WASD or Space to stand up intuitively
+      // Allow WASD or Space to stand up intuitively (only after 400ms cooldown from sitting down)
       const wantsToMove =
+        now - satDownAtRef.current > 400 &&
         !chatInputFocused &&
         activeModal === 'none' &&
         (keysPressed.current['KeyW'] ||
           keysPressed.current['KeyS'] ||
           keysPressed.current['KeyA'] ||
           keysPressed.current['KeyD'] ||
+          keysPressed.current['ArrowUp'] ||
+          keysPressed.current['ArrowDown'] ||
+          keysPressed.current['ArrowLeft'] ||
+          keysPressed.current['ArrowRight'] ||
           keysPressed.current['Space']);
 
       if (wantsToMove) {
-        const exitX = seat.position[0] + Math.sin(seat.rotationY) * 0.78;
-        const exitZ = seat.position[2] + Math.cos(seat.rotationY) * 0.78;
+        keysPressed.current = {};
+        const exitX = seat.position[0] + Math.sin(seat.rotationY) * 0.85;
+        const exitZ = seat.position[2] + Math.cos(seat.rotationY) * 0.85;
         const exitY = getFloorElevation(exitX, exitZ);
         standUp([exitX, exitY, exitZ]);
       } else {
@@ -316,10 +335,10 @@ export const PlayerController: React.FC = () => {
         const angleDiff = normalizeAngle(seat.rotationY - rotY);
         rotY += angleDiff * Math.min(1, dt * 12);
 
+        const nextSeatedAnim: AnimationState = activeEmote === 'wave' ? 'wave' : 'sit';
         localPlayerTransform.position = [px, py, pz];
         localPlayerTransform.rotationY = rotY;
-        localPlayerTransform.animation = activeEmote === 'wave' ? 'wave' : 'sit';
-        currentAnimState.current = localPlayerTransform.animation;
+        localPlayerTransform.animation = nextSeatedAnim;
       }
     } else {
       // 2. Free Third-Person Movement (WASD + Shift + Space)
@@ -416,20 +435,26 @@ export const PlayerController: React.FC = () => {
       localPlayerTransform.position = [px, py, pz];
       localPlayerTransform.rotationY = rotY;
       localPlayerTransform.animation = nextAnim;
-      currentAnimState.current = nextAnim;
+    }
+
+    const animChanged = currentAnimState.current !== localPlayerTransform.animation;
+    if (animChanged) {
+      currentAnimState.current = localPlayerTransform.animation;
+      setLiveAnimState(localPlayerTransform.animation);
     }
 
     // 3. Find Closest Available Seat for Contextual Prompt
     if (!mySeatId) {
       let closestId: string | null = null;
-      let closestDistSq = 2.3 * 2.3;
+      let closestDistSq = 2.65 * 2.65;
       for (const seat of PENTHOUSE_SEATS) {
         const occupant = seats[seat.id];
         if (occupant && occupant !== myPlayerId) continue;
+        const seatFloorY = seat.zone === 'bar' ? 1.2 : seat.posture === 'vip' ? 0.2 : 0.0;
+        if (Math.abs(py - seatFloorY) > 0.95) continue;
         const dx = px - seat.position[0];
-        const dy = py - seat.position[1];
         const dz = pz - seat.position[2];
-        const dSq = dx * dx + dy * dy + dz * dz;
+        const dSq = dx * dx + dz * dz;
         if (dSq < closestDistSq) {
           closestDistSq = dSq;
           closestId = seat.id;
@@ -528,8 +553,8 @@ export const PlayerController: React.FC = () => {
     camera.position.copy(smoothedCameraPos.current);
     camera.lookAt(smoothedLookTarget.current);
 
-    // 7. Broadcast Network Transform (~20Hz)
-    if (now - lastNetworkSend.current > 48) {
+    // 7. Broadcast Network Transform (~20Hz, or immediately whenever animation state changes!)
+    if (animChanged || now - lastNetworkSend.current > 48) {
       lastNetworkSend.current = now;
       sendMoveUpdate(
         [Number(px.toFixed(3)), Number(py.toFixed(3)), Number(pz.toFixed(3))],
@@ -545,7 +570,7 @@ export const PlayerController: React.FC = () => {
     <group ref={avatarGroupRef} position={[0, 0, 6.5]} rotation={[0, Math.PI, 0]}>
       <StylizedAvatar
         customization={customization}
-        animation={currentAnimState.current}
+        animation={liveAnimState}
         seatId={mySeatId}
         headYaw={localPlayerTransform.headYaw}
         headPitch={localPlayerTransform.headPitch}

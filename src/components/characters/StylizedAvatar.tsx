@@ -1,9 +1,10 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { AnimationState, AvatarCustomization, SeatPosture } from '../../../shared/types';
 import { SEAT_MAP } from '../../../shared/seats';
+import { localPlayerTransform } from '../../store/useGameStore';
 
 interface StylizedAvatarProps {
   customization: AvatarCustomization;
@@ -75,8 +76,29 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   const rightShinRef = useRef<THREE.Group>(null);
   const leftEyeRef = useRef<THREE.Group>(null);
   const rightEyeRef = useRef<THREE.Group>(null);
+  const skirtRef = useRef<THREE.Group>(null);
+  const labelAnchorRef = useRef<THREE.Group>(null);
 
   const animClock = useRef(Math.random() * 10);
+  const [activeBubbleText, setActiveBubbleText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lastMessage?.text) {
+      setActiveBubbleText(null);
+      return;
+    }
+    const elapsed = Date.now() - lastMessage.timestamp;
+    const remaining = 6500 - elapsed;
+    if (remaining <= 0) {
+      setActiveBubbleText(null);
+      return;
+    }
+    setActiveBubbleText(lastMessage.text);
+    const timer = setTimeout(() => {
+      setActiveBubbleText(null);
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [lastMessage]);
 
   const isFeminine =
     customization.bodyStyle === 'feminine' ||
@@ -234,9 +256,14 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     let rLegZ = 0;
     let rShinX = 0;
 
-    const dampSpeed = 12;
+    const dampSpeed = 14;
+    const activeAnim: AnimationState = isLocal ? localPlayerTransform.animation : animation;
+    const activeHeadYaw = isLocal ? localPlayerTransform.headYaw : headYaw;
+    const activeHeadPitch = isLocal ? localPlayerTransform.headPitch : headPitch;
+    headRotY = activeHeadYaw;
+    headRotX = activeHeadPitch;
 
-    switch (animation) {
+    switch (activeAnim) {
       case 'idle': {
         const breath = Math.sin(t * 2.1);
         hipsY = 0.72 + breath * 0.012;
@@ -247,8 +274,8 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         rArmX = -Math.sin(t * 1.5) * 0.04;
         lArmZ = (isFeminine ? 0.09 : 0.12) + breath * 0.015;
         rArmZ = -(isFeminine ? 0.09 : 0.12) - breath * 0.015;
-        headRotY = headYaw + Math.sin(t * 0.8) * 0.05;
-        headRotX = headPitch + Math.cos(t * 1.3) * 0.03;
+        headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.05;
+        headRotX = activeHeadPitch + Math.cos(t * 1.3) * 0.03;
         break;
       }
 
@@ -287,7 +314,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         rArmX = Math.sin(r) * 0.82;
         lForeX = -0.85;
         rForeX = -0.85;
-        headRotX = headPitch - 0.1;
+        headRotX = activeHeadPitch - 0.1;
         break;
       }
 
@@ -310,156 +337,156 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         const posture: SeatPosture = (seatId && SEAT_MAP[seatId]?.posture) || 'sofa';
 
         if (posture === 'sofa') {
-          // 1. SOFA: Relaxed cinema sofa lean, one hand in lap, one arm resting on sofa cushion
-          hipsY = 0.44;
-          hipsZ = -0.06;
-          spineRotX = -0.14 + breath * 0.015;
-          lLegX = -1.46;
+          // 1. SOFA: Relaxed cinema sofa lean, pelvis resting directly on cushion (y=0.11 relative to seat surface)
+          hipsY = 0.11;
+          hipsZ = -0.05;
+          spineRotX = -0.12 + breath * 0.015;
+          lLegX = -1.42;
           lShinX = 1.38;
-          rLegX = -1.46;
+          rLegX = -1.42;
           rShinX = 1.38;
           lLegZ = isFeminine ? -0.04 : 0.06;
           rLegZ = isFeminine ? 0.04 : -0.06;
 
-          lArmX = -0.42;
+          lArmX = -0.32;
           lArmZ = 0.06;
-          lForeX = -0.65;
-          lForeZ = -0.28;
+          lForeX = -0.52;
+          lForeZ = -0.22;
 
           rArmX = -0.22;
-          rArmZ = -0.28;
+          rArmZ = -0.22;
           rForeX = -0.45;
-          headRotY = headYaw + Math.sin(t * 0.6) * 0.04;
-          headRotX = headPitch + Math.sin(t * 1.2) * 0.025;
+          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.04;
+          headRotX = activeHeadPitch + Math.sin(t * 1.2) * 0.025;
         } else if (posture === 'chaise') {
           // 2. CHAISE LONGUE: Deep lounge recline with legs stretched out and ankles crossed
-          hipsY = 0.42;
-          hipsZ = -0.11;
-          spineRotX = -0.28 + breath * 0.014;
-          lLegX = -1.22;
-          lShinX = 0.28;
+          hipsY = 0.11;
+          hipsZ = -0.09;
+          spineRotX = -0.24 + breath * 0.014;
+          lLegX = -1.26;
+          lShinX = 0.35;
           lLegZ = -0.06;
-          rLegX = -1.28;
-          rShinX = 0.36;
+          rLegX = -1.32;
+          rShinX = 0.42;
           rLegZ = 0.12;
 
           lArmX = -0.18;
-          lArmZ = 0.36;
-          lForeX = -0.45;
-          rArmX = -0.38;
+          lArmZ = 0.32;
+          lForeX = -0.42;
+          rArmX = -0.32;
           rArmZ = -0.12;
-          rForeX = -0.62;
+          rForeX = -0.52;
           headRotZ = 0.04;
-          headRotY = headYaw + Math.sin(t * 0.5) * 0.04;
+          headRotY = activeHeadYaw + Math.sin(t * 0.5) * 0.04;
         } else if (posture === 'pouf') {
-          // 3. VELVET POUF: Cozy forward-leaning cinema watch pose, elbows resting on knees & hands near chin
-          hipsY = 0.42;
-          hipsZ = 0.02;
-          spineRotX = 0.22 + breath * 0.016;
-          lLegX = -1.52;
-          lShinX = 1.46;
-          rLegX = -1.52;
-          rShinX = 1.46;
+          // 3. VELVET POUF: Cozy cinema watch pose on the pouf cushion, hands resting comfortably on knees
+          hipsY = 0.11;
+          hipsZ = 0.0;
+          spineRotX = 0.08 + breath * 0.016;
+          lLegX = -1.38;
+          lShinX = 1.42;
+          rLegX = -1.38;
+          rShinX = 1.42;
           lLegZ = 0.08;
           rLegZ = -0.08;
 
-          lArmX = -0.92;
-          rArmX = -0.92;
+          lArmX = -0.38;
+          rArmX = -0.38;
           lArmZ = 0.08;
           rArmZ = -0.08;
-          lForeX = -1.22;
-          rForeX = -1.22;
-          lForeZ = -0.18;
-          rForeZ = 0.18;
-          headRotX = headPitch - 0.16 + Math.sin(t * 1.4) * 0.03;
+          lForeX = -0.48;
+          rForeX = -0.48;
+          lForeZ = -0.14;
+          rForeZ = 0.14;
+          headRotX = activeHeadPitch - 0.06 + Math.sin(t * 1.4) * 0.03;
         } else if (posture === 'cushion') {
-          // 4. FLOOR CUSHION: Cross-legged lotus zen sit on the low floor pillow
-          hipsY = 0.28;
+          // 4. FLOOR CUSHION: Cross-legged lotus sit directly on the low floor pillow
+          hipsY = 0.09;
           hipsZ = -0.02;
           spineRotX = -0.03 + breath * 0.018;
           spineRotZ = Math.sin(t * 1.1) * 0.028;
 
           lLegX = -1.32;
-          lLegZ = 0.56;
-          lLegY = 0.32;
-          lShinX = 1.58;
+          lLegZ = 0.52;
+          lLegY = 0.28;
+          lShinX = 1.54;
 
           rLegX = -1.32;
-          rLegZ = -0.56;
-          rLegY = -0.32;
-          rShinX = 1.58;
+          rLegZ = -0.52;
+          rLegY = -0.28;
+          rShinX = 1.54;
 
-          lArmX = -0.36;
-          rArmX = -0.36;
-          lArmZ = 0.22;
-          rArmZ = -0.22;
-          lForeX = -0.52;
-          rForeX = -0.52;
-          headRotY = headYaw + Math.sin(t * 0.7) * 0.05;
+          lArmX = -0.28;
+          rArmX = -0.28;
+          lArmZ = 0.18;
+          rArmZ = -0.18;
+          lForeX = -0.48;
+          rForeX = -0.48;
+          headRotY = activeHeadYaw + Math.sin(t * 0.7) * 0.05;
         } else if (posture === 'vip') {
-          // 5. VIP PANORAMIC SOFA: Confident figure-4 / crossed-leg executive pose with arms draped wide
-          hipsY = 0.44;
-          hipsZ = -0.08;
-          spineRotX = -0.22 + breath * 0.014;
+          // 5. VIP PANORAMIC SOFA: Confident crossed-leg executive pose with arms draped on backrest
+          hipsY = 0.11;
+          hipsZ = -0.06;
+          spineRotX = -0.18 + breath * 0.014;
 
-          lLegX = -1.46;
-          lShinX = 1.4;
-          rLegX = -1.68;
-          rLegZ = 0.22;
-          rLegY = -0.24;
+          lLegX = -1.42;
+          lShinX = 1.38;
+          rLegX = -1.58;
+          rLegZ = 0.18;
+          rLegY = -0.2;
           rShinX = 1.32;
 
           lArmX = -0.14;
-          lArmZ = 0.68;
+          lArmZ = 0.56;
           lForeX = -0.32;
           rArmX = -0.14;
-          rArmZ = -0.68;
+          rArmZ = -0.56;
           rForeX = -0.32;
-          headRotY = headYaw + Math.sin(t * 0.5) * 0.05;
+          headRotY = activeHeadYaw + Math.sin(t * 0.5) * 0.05;
         } else if (posture === 'armchair') {
-          // 6. SUNSET READING ARMCHAIR: Elegant crossed-leg conversational pose with thoughtful hand gesture
-          hipsY = 0.44;
+          // 6. SUNSET READING ARMCHAIR: Elegant crossed-leg conversational pose
+          hipsY = 0.11;
           hipsZ = -0.05;
           spineRotX = -0.1 + breath * 0.015;
           spineRotZ = 0.04;
 
-          lLegX = -1.48;
-          lLegZ = -0.06;
-          lShinX = 1.38;
-          rLegX = -1.62;
-          rLegZ = 0.14;
-          rShinX = 1.26;
+          lLegX = -1.44;
+          lLegZ = -0.05;
+          lShinX = 1.36;
+          rLegX = -1.56;
+          rLegZ = 0.12;
+          rShinX = 1.28;
 
-          lArmX = -0.45;
+          lArmX = -0.35;
           lArmZ = 0.08;
-          lForeX = -0.72;
-          lForeZ = -0.32;
+          lForeX = -0.55;
+          lForeZ = -0.24;
 
-          rArmX = -0.75;
+          rArmX = -0.46;
           rArmZ = -0.06;
-          rForeX = -1.32 + Math.sin(t * 1.6) * 0.07;
-          rForeZ = 0.15;
+          rForeX = -0.68 + Math.sin(t * 1.6) * 0.05;
+          rForeZ = 0.12;
           headRotZ = -0.05;
-          headRotY = headYaw + Math.sin(t * 0.8) * 0.06;
+          headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.06;
         } else if (posture === 'barstool') {
-          // 7. SKYBAR HIGH STOOL: High perch, one foot hooked on footrest ring, other leg dangling with rhythm sway
-          hipsY = 0.5;
-          hipsZ = 0.02;
-          spineRotX = 0.06 + breath * 0.015;
+          // 7. SKYBAR HIGH STOOL: High perch on barstool cushion, one foot hooked on ring, other dangling
+          hipsY = 0.12;
+          hipsZ = 0.01;
+          spineRotX = 0.04 + breath * 0.015;
           spineRotZ = Math.sin(t * 1.4) * 0.03;
 
-          lLegX = -1.24;
-          lShinX = 1.48;
-          rLegX = -0.68;
+          lLegX = -1.18;
+          lShinX = 1.38;
+          rLegX = -0.72;
           rShinX = 0.52 + Math.sin(t * 2.2) * 0.08;
 
-          lArmX = -0.68;
+          lArmX = -0.45;
           lArmZ = 0.12;
-          lForeX = -0.82;
-          rArmX = -0.64;
-          rArmZ = -0.14;
-          rForeX = -0.9 + Math.sin(t * 1.8) * 0.06;
-          headRotY = headYaw + Math.sin(t * 0.9) * 0.06;
+          lForeX = -0.58;
+          rArmX = -0.45;
+          rArmZ = -0.12;
+          rForeX = -0.62 + Math.sin(t * 1.8) * 0.05;
+          headRotY = activeHeadYaw + Math.sin(t * 0.9) * 0.06;
         }
         break;
       }
@@ -562,6 +589,23 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     rLeg.rotation.z = THREE.MathUtils.damp(rLeg.rotation.z, rLegZ, dampSpeed, dt);
     rShin.rotation.x = THREE.MathUtils.damp(rShin.rotation.x, rShinX, dampSpeed, dt);
 
+    // Smoothly drape skirt over thighs when seated so it never sticks vertically into cushions
+    if (skirtRef.current) {
+      const targetSkirtY = activeAnim === 'sit' ? -0.01 : -0.08;
+      const targetSkirtZ = activeAnim === 'sit' ? 0.095 : 0;
+      const targetSkirtRotX = activeAnim === 'sit' ? -0.82 : 0;
+      const targetSkirtScaleY = activeAnim === 'sit' ? 0.68 : 1.0;
+      skirtRef.current.position.y = THREE.MathUtils.damp(skirtRef.current.position.y, targetSkirtY, dampSpeed, dt);
+      skirtRef.current.position.z = THREE.MathUtils.damp(skirtRef.current.position.z, targetSkirtZ, dampSpeed, dt);
+      skirtRef.current.rotation.x = THREE.MathUtils.damp(skirtRef.current.rotation.x, targetSkirtRotX, dampSpeed, dt);
+      skirtRef.current.scale.y = THREE.MathUtils.damp(skirtRef.current.scale.y, targetSkirtScaleY, dampSpeed, dt);
+    }
+
+    // Keep overhead label & bubble anchored cleanly above the head whether standing or seated
+    if (labelAnchorRef.current) {
+      labelAnchorRef.current.position.y = hips.position.y + 1.18;
+    }
+
     // Periodic natural eye blink
     const blinkCycle = t % 4.2;
     const blinkScaleY = blinkCycle > 4.04 ? 0.12 : 1.0;
@@ -571,23 +615,18 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     }
   });
 
-  // Check if speech bubble is recent (within last 7 seconds)
-  const activeBubbleText = useMemo(() => {
-    if (!lastMessage?.text) return null;
-    if (Date.now() - lastMessage.timestamp > 7500) return null;
-    return lastMessage.text;
-  }, [lastMessage]);
-
   const hasSkirt =
     customization.outfitStyle === 'dress' || customization.outfitStyle === 'skirt_set';
 
   return (
     <group ref={rootRef}>
-      {/* Subtle ground contact shadow disc */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <circleGeometry args={[0.36, 24]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.32} depthWrite={false} />
-      </mesh>
+      {/* Subtle ground contact shadow disc (hidden when seated on furniture) */}
+      {animation !== 'sit' && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+          <circleGeometry args={[0.36, 24]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.32} depthWrite={false} />
+        </mesh>
+      )}
 
       {/* HIPS ROOT */}
       <group ref={hipsRef} position={[0, 0.72, 0]}>
@@ -604,7 +643,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
         {/* Flared Skirt for 'dress' and 'skirt_set' outfits */}
         {hasSkirt && (
-          <group position={[0, -0.08, 0]}>
+          <group ref={skirtRef} position={[0, -0.08, 0]}>
             <mesh
               castShadow
               receiveShadow
@@ -1616,42 +1655,44 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
       {/* OVERHEAD NAME TAG & COMPACT SPEECH BUBBLE */}
       {showLabel && !previewMode && (
-        <Html
-          position={[0, 1.88, 0]}
-          center
-          distanceFactor={9}
-          zIndexRange={[10, 0]}
-          style={{ pointerEvents: 'none' }}
-        >
-          <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none">
-            {activeBubbleText && (
-              <div className="relative max-w-[180px] px-2 py-0.5 rounded-lg bg-slate-950/80 border border-amber-400/35 text-[10px] leading-snug text-slate-100 font-medium shadow-md backdrop-blur-md text-center break-words">
-                {activeBubbleText}
-                <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-1.5 h-1.5 rotate-45 bg-slate-950/80 border-r border-b border-amber-400/35" />
-              </div>
-            )}
-            {!(isLocal && animation === 'sit') && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-950/45 border border-white/10 backdrop-blur-sm shadow-sm whitespace-nowrap opacity-70">
-                {isHost && (
-                  <span className="text-[8px] text-amber-400" title="Anfitrião da Sala">
-                    👑
+        <group ref={labelAnchorRef} position={[0, 1.88, 0]}>
+          <Html
+            position={[0, 0, 0]}
+            center
+            distanceFactor={9}
+            zIndexRange={[10, 0]}
+            style={{ pointerEvents: 'none' }}
+          >
+            <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none">
+              {activeBubbleText && (
+                <div className="relative max-w-[180px] px-2 py-0.5 rounded-lg bg-slate-950/80 border border-amber-400/35 text-[10px] leading-snug text-slate-100 font-medium shadow-md backdrop-blur-md text-center break-words">
+                  {activeBubbleText}
+                  <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-1.5 h-1.5 rotate-45 bg-slate-950/80 border-r border-b border-amber-400/35" />
+                </div>
+              )}
+              {!(isLocal && animation === 'sit') && (
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-950/45 border border-white/10 backdrop-blur-sm shadow-sm whitespace-nowrap opacity-70">
+                  {isHost && (
+                    <span className="text-[8px] text-amber-400" title="Anfitrião da Sala">
+                      👑
+                    </span>
+                  )}
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: customization.primaryColor }}
+                  />
+                  <span
+                    className={`text-[9px] font-medium tracking-wide ${
+                      isLocal ? 'text-amber-300/90' : 'text-slate-100/90'
+                    }`}
+                  >
+                    {customization.name}
                   </span>
-                )}
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: customization.primaryColor }}
-                />
-                <span
-                  className={`text-[9px] font-medium tracking-wide ${
-                    isLocal ? 'text-amber-300/90' : 'text-slate-100/90'
-                  }`}
-                >
-                  {customization.name}
-                </span>
-              </div>
-            )}
-          </div>
-        </Html>
+                </div>
+              )}
+            </div>
+          </Html>
+        </group>
       )}
     </group>
   );
