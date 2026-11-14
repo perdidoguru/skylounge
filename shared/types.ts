@@ -1,6 +1,44 @@
-export type AvatarOutfitStyle = 'jacket' | 'hoodie' | 'blazer' | 'vest';
-export type AvatarHairStyle = 'spiky' | 'bob' | 'curly' | 'ponytail' | 'waves';
-export type AvatarAccessory = 'none' | 'glasses' | 'headphones' | 'crown' | 'beanie';
+export type AvatarBodyStyle = 'masculine' | 'feminine';
+
+export type AvatarOutfitStyle =
+  | 'jacket'
+  | 'hoodie'
+  | 'blazer'
+  | 'vest'
+  | 'dress'
+  | 'skirt_set'
+  | 'offshoulder'
+  | 'jumpsuit';
+
+export type AvatarHairStyle =
+  | 'spiky'
+  | 'bob'
+  | 'curly'
+  | 'ponytail'
+  | 'waves'
+  | 'long_waves'
+  | 'long_straight'
+  | 'twintails'
+  | 'high_bun';
+
+export type AvatarAccessory =
+  | 'none'
+  | 'glasses'
+  | 'headphones'
+  | 'crown'
+  | 'beanie'
+  | 'tiara'
+  | 'earrings'
+  | 'bow';
+
+export type SeatPosture =
+  | 'sofa'
+  | 'chaise'
+  | 'pouf'
+  | 'cushion'
+  | 'vip'
+  | 'armchair'
+  | 'barstool';
 
 export type AnimationState =
   | 'idle'
@@ -15,6 +53,7 @@ export type AnimationState =
 
 export interface AvatarCustomization {
   name: string;
+  bodyStyle?: AvatarBodyStyle;
   skinColor: string;
   outfitStyle: AvatarOutfitStyle;
   primaryColor: string;
@@ -105,6 +144,7 @@ export interface SeatDefinition {
   id: string;
   label: string;
   zone: 'cinema' | 'bar' | 'lounge' | 'terrace';
+  posture: SeatPosture;
   position: [number, number, number];
   rotationY: number;
   seatHeightOffset?: number;

@@ -2,11 +2,13 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { AnimationState, AvatarCustomization } from '../../../shared/types';
+import { AnimationState, AvatarCustomization, SeatPosture } from '../../../shared/types';
+import { SEAT_MAP } from '../../../shared/seats';
 
 interface StylizedAvatarProps {
   customization: AvatarCustomization;
   animation: AnimationState;
+  seatId?: string | null;
   headYaw?: number;
   headPitch?: number;
   isHost?: boolean;
@@ -19,9 +21,38 @@ interface StylizedAvatarProps {
   previewMode?: boolean;
 }
 
+/**
+ * Reusable tilted cranium hair cap that sits high on the forehead (above eyebrows at y=0.125+)
+ * while extending all the way down the back of the skull (-Z) to the nape of the neck.
+ */
+const CraniumHairCap: React.FC<{ material: THREE.Material }> = ({ material }) => (
+  <group>
+    {/* Main tilted upper-back skull cap (leaves face & eyes 100% unobstructed) */}
+    <mesh
+      castShadow
+      material={material}
+      position={[0, 0.048, -0.032]}
+      rotation={[-0.58, 0, 0]}
+      scale={[1.06, 1.03, 1.08]}
+    >
+      <sphereGeometry args={[0.236, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
+    </mesh>
+    {/* Nape / Lower back skull volume */}
+    <mesh
+      castShadow
+      material={material}
+      position={[0, -0.03, -0.13]}
+      scale={[0.96, 0.85, 0.72]}
+    >
+      <sphereGeometry args={[0.175, 18, 14]} />
+    </mesh>
+  </group>
+);
+
 export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   customization,
   animation,
+  seatId = null,
   headYaw = 0,
   headPitch = 0,
   isHost = false,
@@ -47,27 +78,32 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
   const animClock = useRef(Math.random() * 10);
 
+  const isFeminine =
+    customization.bodyStyle === 'feminine' ||
+    ['dress', 'skirt_set', 'offshoulder', 'jumpsuit'].includes(customization.outfitStyle);
+
   // Memoized materials for performance & consistent visual style
   const materials = useMemo(() => {
     const skin = new THREE.MeshStandardMaterial({
       color: customization.skinColor,
-      roughness: 0.55,
-      metalness: 0.05,
+      roughness: 0.52,
+      metalness: 0.04,
     });
     const primary = new THREE.MeshStandardMaterial({
       color: customization.primaryColor,
-      roughness: 0.45,
+      roughness: 0.42,
       metalness: 0.12,
     });
     const secondary = new THREE.MeshStandardMaterial({
       color: customization.secondaryColor,
-      roughness: 0.6,
+      roughness: 0.55,
       metalness: 0.08,
     });
     const hair = new THREE.MeshStandardMaterial({
       color: customization.hairColor,
-      roughness: 0.42,
-      metalness: 0.1,
+      roughness: 0.38,
+      metalness: 0.12,
+      side: THREE.DoubleSide,
     });
     const white = new THREE.MeshStandardMaterial({
       color: '#f8fafc',
@@ -76,20 +112,32 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     });
     const dark = new THREE.MeshStandardMaterial({
       color: '#111622',
-      roughness: 0.3,
+      roughness: 0.28,
       metalness: 0.25,
     });
     const gold = new THREE.MeshStandardMaterial({
       color: '#f5b851',
-      roughness: 0.22,
-      metalness: 0.85,
+      roughness: 0.2,
+      metalness: 0.88,
       emissive: '#593a08',
+      emissiveIntensity: 0.22,
+    });
+    const crystal = new THREE.MeshStandardMaterial({
+      color: '#e0f2fe',
+      roughness: 0.1,
+      metalness: 0.9,
+      emissive: '#38bdf8',
       emissiveIntensity: 0.25,
     });
     const blush = new THREE.MeshBasicMaterial({
       color: '#f472b6',
       transparent: true,
-      opacity: 0.32,
+      opacity: isFeminine ? 0.38 : 0.26,
+    });
+    const lipTint = new THREE.MeshStandardMaterial({
+      color: isFeminine ? '#e15b76' : '#261b22',
+      roughness: 0.3,
+      metalness: 0.08,
     });
     const glassesLens = new THREE.MeshStandardMaterial({
       color: '#090d16',
@@ -97,12 +145,25 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       metalness: 0.85,
     });
 
-    return { skin, primary, secondary, hair, white, dark, gold, blush, glassesLens };
+    return {
+      skin,
+      primary,
+      secondary,
+      hair,
+      white,
+      dark,
+      gold,
+      crystal,
+      blush,
+      lipTint,
+      glassesLens,
+    };
   }, [
     customization.skinColor,
     customization.primaryColor,
     customization.secondaryColor,
     customization.hairColor,
+    isFeminine,
   ]);
 
   useFrame((state, delta) => {
@@ -111,7 +172,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     const t = animClock.current;
 
     if (previewMode && rootRef.current) {
-      rootRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.65) * 0.35;
+      rootRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.65) * 0.38;
     }
 
     const hips = hipsRef.current;
@@ -126,7 +187,19 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     const rLeg = rightLegRef.current;
     const rShin = rightShinRef.current;
 
-    if (!hips || !spine || !head || !lArm || !lFore || !rArm || !rFore || !lLeg || !lShin || !rLeg || !rShin) {
+    if (
+      !hips ||
+      !spine ||
+      !head ||
+      !lArm ||
+      !lFore ||
+      !rArm ||
+      !rFore ||
+      !lLeg ||
+      !lShin ||
+      !rLeg ||
+      !rShin
+    ) {
       return;
     }
 
@@ -142,16 +215,23 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     let headRotZ = 0;
 
     let lArmX = 0;
-    let lArmZ = 0.12;
+    let lArmZ = isFeminine ? 0.09 : 0.12;
     let lForeX = -0.15;
+    let lForeZ = 0;
 
     let rArmX = 0;
-    let rArmZ = -0.12;
+    let rArmZ = isFeminine ? -0.09 : -0.12;
     let rForeX = -0.15;
+    let rForeZ = 0;
 
     let lLegX = 0;
+    let lLegY = 0;
+    let lLegZ = 0;
     let lShinX = 0;
+
     let rLegX = 0;
+    let rLegY = 0;
+    let rLegZ = 0;
     let rShinX = 0;
 
     const dampSpeed = 12;
@@ -161,11 +241,12 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         const breath = Math.sin(t * 2.1);
         hipsY = 0.72 + breath * 0.012;
         spineRotX = breath * 0.025;
-        spineRotZ = Math.cos(t * 1.1) * 0.018;
+        spineRotZ = Math.cos(t * 1.1) * (isFeminine ? 0.026 : 0.018);
+        hipsRotY = isFeminine ? Math.sin(t * 1.1) * 0.04 : 0;
         lArmX = Math.sin(t * 1.5) * 0.04;
         rArmX = -Math.sin(t * 1.5) * 0.04;
-        lArmZ = 0.12 + breath * 0.015;
-        rArmZ = -0.12 - breath * 0.015;
+        lArmZ = (isFeminine ? 0.09 : 0.12) + breath * 0.015;
+        rArmZ = -(isFeminine ? 0.09 : 0.12) - breath * 0.015;
         headRotY = headYaw + Math.sin(t * 0.8) * 0.05;
         headRotX = headPitch + Math.cos(t * 1.3) * 0.03;
         break;
@@ -174,19 +255,19 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       case 'walk': {
         const w = t * 8.5;
         hipsY = 0.72 + Math.abs(Math.cos(w)) * 0.045;
-        hipsRotY = Math.sin(w) * 0.08;
-        spineRotX = 0.06;
-        spineRotZ = Math.cos(w) * 0.03;
+        hipsRotY = Math.sin(w) * (isFeminine ? 0.12 : 0.08);
+        spineRotX = 0.05;
+        spineRotZ = Math.cos(w) * (isFeminine ? 0.045 : 0.03);
 
-        lLegX = Math.sin(w) * 0.58;
-        rLegX = -Math.sin(w) * 0.58;
+        lLegX = Math.sin(w) * 0.56;
+        rLegX = -Math.sin(w) * 0.56;
         lShinX = Math.max(0, -Math.cos(w) * 0.55);
         rShinX = Math.max(0, Math.cos(w) * 0.55);
 
-        lArmX = -Math.sin(w) * 0.45;
-        rArmX = Math.sin(w) * 0.45;
-        lForeX = -0.28 - Math.max(0, -Math.sin(w)) * 0.25;
-        rForeX = -0.28 - Math.max(0, Math.sin(w)) * 0.25;
+        lArmX = -Math.sin(w) * 0.42;
+        rArmX = Math.sin(w) * 0.42;
+        lForeX = -0.26 - Math.max(0, -Math.sin(w)) * 0.22;
+        rForeX = -0.26 - Math.max(0, Math.sin(w)) * 0.22;
         break;
       }
 
@@ -226,21 +307,160 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
       case 'sit': {
         const breath = Math.sin(t * 1.8);
-        hipsY = 0.44;
-        hipsZ = -0.06;
-        spineRotX = -0.08 + breath * 0.015;
-        lLegX = -1.48;
-        lShinX = 1.42;
-        rLegX = -1.48;
-        rShinX = 1.42;
+        const posture: SeatPosture = (seatId && SEAT_MAP[seatId]?.posture) || 'sofa';
 
-        lArmX = -0.32;
-        rArmX = -0.32;
-        lArmZ = 0.16;
-        rArmZ = -0.16;
-        lForeX = -0.55;
-        rForeX = -0.55;
-        headRotY = headYaw + Math.sin(t * 0.6) * 0.04;
+        if (posture === 'sofa') {
+          // 1. SOFA: Relaxed cinema sofa lean, one hand in lap, one arm resting on sofa cushion
+          hipsY = 0.44;
+          hipsZ = -0.06;
+          spineRotX = -0.14 + breath * 0.015;
+          lLegX = -1.46;
+          lShinX = 1.38;
+          rLegX = -1.46;
+          rShinX = 1.38;
+          lLegZ = isFeminine ? -0.04 : 0.06;
+          rLegZ = isFeminine ? 0.04 : -0.06;
+
+          lArmX = -0.42;
+          lArmZ = 0.06;
+          lForeX = -0.65;
+          lForeZ = -0.28;
+
+          rArmX = -0.22;
+          rArmZ = -0.28;
+          rForeX = -0.45;
+          headRotY = headYaw + Math.sin(t * 0.6) * 0.04;
+          headRotX = headPitch + Math.sin(t * 1.2) * 0.025;
+        } else if (posture === 'chaise') {
+          // 2. CHAISE LONGUE: Deep lounge recline with legs stretched out and ankles crossed
+          hipsY = 0.42;
+          hipsZ = -0.11;
+          spineRotX = -0.28 + breath * 0.014;
+          lLegX = -1.22;
+          lShinX = 0.28;
+          lLegZ = -0.06;
+          rLegX = -1.28;
+          rShinX = 0.36;
+          rLegZ = 0.12;
+
+          lArmX = -0.18;
+          lArmZ = 0.36;
+          lForeX = -0.45;
+          rArmX = -0.38;
+          rArmZ = -0.12;
+          rForeX = -0.62;
+          headRotZ = 0.04;
+          headRotY = headYaw + Math.sin(t * 0.5) * 0.04;
+        } else if (posture === 'pouf') {
+          // 3. VELVET POUF: Cozy forward-leaning cinema watch pose, elbows resting on knees & hands near chin
+          hipsY = 0.42;
+          hipsZ = 0.02;
+          spineRotX = 0.22 + breath * 0.016;
+          lLegX = -1.52;
+          lShinX = 1.46;
+          rLegX = -1.52;
+          rShinX = 1.46;
+          lLegZ = 0.08;
+          rLegZ = -0.08;
+
+          lArmX = -0.92;
+          rArmX = -0.92;
+          lArmZ = 0.08;
+          rArmZ = -0.08;
+          lForeX = -1.22;
+          rForeX = -1.22;
+          lForeZ = -0.18;
+          rForeZ = 0.18;
+          headRotX = headPitch - 0.16 + Math.sin(t * 1.4) * 0.03;
+        } else if (posture === 'cushion') {
+          // 4. FLOOR CUSHION: Cross-legged lotus zen sit on the low floor pillow
+          hipsY = 0.28;
+          hipsZ = -0.02;
+          spineRotX = -0.03 + breath * 0.018;
+          spineRotZ = Math.sin(t * 1.1) * 0.028;
+
+          lLegX = -1.32;
+          lLegZ = 0.56;
+          lLegY = 0.32;
+          lShinX = 1.58;
+
+          rLegX = -1.32;
+          rLegZ = -0.56;
+          rLegY = -0.32;
+          rShinX = 1.58;
+
+          lArmX = -0.36;
+          rArmX = -0.36;
+          lArmZ = 0.22;
+          rArmZ = -0.22;
+          lForeX = -0.52;
+          rForeX = -0.52;
+          headRotY = headYaw + Math.sin(t * 0.7) * 0.05;
+        } else if (posture === 'vip') {
+          // 5. VIP PANORAMIC SOFA: Confident figure-4 / crossed-leg executive pose with arms draped wide
+          hipsY = 0.44;
+          hipsZ = -0.08;
+          spineRotX = -0.22 + breath * 0.014;
+
+          lLegX = -1.46;
+          lShinX = 1.4;
+          rLegX = -1.68;
+          rLegZ = 0.22;
+          rLegY = -0.24;
+          rShinX = 1.32;
+
+          lArmX = -0.14;
+          lArmZ = 0.68;
+          lForeX = -0.32;
+          rArmX = -0.14;
+          rArmZ = -0.68;
+          rForeX = -0.32;
+          headRotY = headYaw + Math.sin(t * 0.5) * 0.05;
+        } else if (posture === 'armchair') {
+          // 6. SUNSET READING ARMCHAIR: Elegant crossed-leg conversational pose with thoughtful hand gesture
+          hipsY = 0.44;
+          hipsZ = -0.05;
+          spineRotX = -0.1 + breath * 0.015;
+          spineRotZ = 0.04;
+
+          lLegX = -1.48;
+          lLegZ = -0.06;
+          lShinX = 1.38;
+          rLegX = -1.62;
+          rLegZ = 0.14;
+          rShinX = 1.26;
+
+          lArmX = -0.45;
+          lArmZ = 0.08;
+          lForeX = -0.72;
+          lForeZ = -0.32;
+
+          rArmX = -0.75;
+          rArmZ = -0.06;
+          rForeX = -1.32 + Math.sin(t * 1.6) * 0.07;
+          rForeZ = 0.15;
+          headRotZ = -0.05;
+          headRotY = headYaw + Math.sin(t * 0.8) * 0.06;
+        } else if (posture === 'barstool') {
+          // 7. SKYBAR HIGH STOOL: High perch, one foot hooked on footrest ring, other leg dangling with rhythm sway
+          hipsY = 0.5;
+          hipsZ = 0.02;
+          spineRotX = 0.06 + breath * 0.015;
+          spineRotZ = Math.sin(t * 1.4) * 0.03;
+
+          lLegX = -1.24;
+          lShinX = 1.48;
+          rLegX = -0.68;
+          rShinX = 0.52 + Math.sin(t * 2.2) * 0.08;
+
+          lArmX = -0.68;
+          lArmZ = 0.12;
+          lForeX = -0.82;
+          rArmX = -0.64;
+          rArmZ = -0.14;
+          rForeX = -0.9 + Math.sin(t * 1.8) * 0.06;
+          headRotY = headYaw + Math.sin(t * 0.9) * 0.06;
+        }
         break;
       }
 
@@ -325,14 +545,21 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     lArm.rotation.x = THREE.MathUtils.damp(lArm.rotation.x, lArmX, dampSpeed, dt);
     lArm.rotation.z = THREE.MathUtils.damp(lArm.rotation.z, lArmZ, dampSpeed, dt);
     lFore.rotation.x = THREE.MathUtils.damp(lFore.rotation.x, lForeX, dampSpeed, dt);
+    lFore.rotation.z = THREE.MathUtils.damp(lFore.rotation.z, lForeZ, dampSpeed, dt);
 
     rArm.rotation.x = THREE.MathUtils.damp(rArm.rotation.x, rArmX, dampSpeed, dt);
     rArm.rotation.z = THREE.MathUtils.damp(rArm.rotation.z, rArmZ, dampSpeed, dt);
     rFore.rotation.x = THREE.MathUtils.damp(rFore.rotation.x, rForeX, dampSpeed, dt);
+    rFore.rotation.z = THREE.MathUtils.damp(rFore.rotation.z, rForeZ, dampSpeed, dt);
 
     lLeg.rotation.x = THREE.MathUtils.damp(lLeg.rotation.x, lLegX, dampSpeed, dt);
+    lLeg.rotation.y = THREE.MathUtils.damp(lLeg.rotation.y, lLegY, dampSpeed, dt);
+    lLeg.rotation.z = THREE.MathUtils.damp(lLeg.rotation.z, lLegZ, dampSpeed, dt);
     lShin.rotation.x = THREE.MathUtils.damp(lShin.rotation.x, lShinX, dampSpeed, dt);
+
     rLeg.rotation.x = THREE.MathUtils.damp(rLeg.rotation.x, rLegX, dampSpeed, dt);
+    rLeg.rotation.y = THREE.MathUtils.damp(rLeg.rotation.y, rLegY, dampSpeed, dt);
+    rLeg.rotation.z = THREE.MathUtils.damp(rLeg.rotation.z, rLegZ, dampSpeed, dt);
     rShin.rotation.x = THREE.MathUtils.damp(rShin.rotation.x, rShinX, dampSpeed, dt);
 
     // Periodic natural eye blink
@@ -351,6 +578,9 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     return lastMessage.text;
   }, [lastMessage]);
 
+  const hasSkirt =
+    customization.outfitStyle === 'dress' || customization.outfitStyle === 'skirt_set';
+
   return (
     <group ref={rootRef}>
       {/* Subtle ground contact shadow disc */}
@@ -361,49 +591,78 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
       {/* HIPS ROOT */}
       <group ref={hipsRef} position={[0, 0.72, 0]}>
-        {/* Pelvis / Belt Block */}
-        <mesh castShadow receiveShadow material={materials.secondary} position={[0, 0, 0]}>
+        {/* Pelvis / Hip Sculpt */}
+        <mesh
+          castShadow
+          receiveShadow
+          material={customization.outfitStyle === 'dress' ? materials.primary : materials.secondary}
+          position={[0, 0, 0]}
+          scale={isFeminine ? [1.06, 0.95, 1.02] : [1, 1, 1]}
+        >
           <capsuleGeometry args={[0.17, 0.1, 8, 16]} />
         </mesh>
 
+        {/* Flared Skirt for 'dress' and 'skirt_set' outfits */}
+        {hasSkirt && (
+          <group position={[0, -0.08, 0]}>
+            <mesh
+              castShadow
+              receiveShadow
+              material={
+                customization.outfitStyle === 'dress' ? materials.primary : materials.secondary
+              }
+            >
+              <cylinderGeometry args={[0.175, 0.285, 0.28, 24]} />
+            </mesh>
+            {/* Gold Hem Trim */}
+            <mesh castShadow material={materials.gold} position={[0, -0.135, 0]}>
+              <cylinderGeometry args={[0.286, 0.288, 0.02, 24]} />
+            </mesh>
+          </group>
+        )}
+
         {/* Belt & Gold Buckle */}
-        <mesh castShadow material={materials.dark} position={[0, 0.03, 0]}>
-          <cylinderGeometry args={[0.182, 0.182, 0.045, 20]} />
+        <mesh castShadow material={materials.dark} position={[0, 0.035, 0]}>
+          <cylinderGeometry args={[isFeminine ? 0.168 : 0.182, isFeminine ? 0.172 : 0.182, 0.04, 20]} />
         </mesh>
-        <mesh castShadow material={materials.gold} position={[0, 0.03, 0.18]}>
-          <boxGeometry args={[0.07, 0.05, 0.02]} />
+        <mesh castShadow material={materials.gold} position={[0, 0.035, isFeminine ? 0.168 : 0.18]}>
+          <boxGeometry args={[0.065, 0.045, 0.02]} />
         </mesh>
 
         {/* SPINE & UPPER BODY */}
         <group ref={spineRef} position={[0, 0.06, 0]}>
-          {/* Main Torso Sculpt */}
+          {/* Main Torso Sculpt (Tapered waist for feminine silhouette) */}
           <mesh castShadow receiveShadow material={materials.primary} position={[0, 0.24, 0]}>
-            <cylinderGeometry args={[0.21, 0.175, 0.44, 20]} />
+            <cylinderGeometry
+              args={[isFeminine ? 0.192 : 0.21, isFeminine ? 0.148 : 0.175, 0.44, 20]}
+            />
           </mesh>
+
           {/* Rounded Shoulder Bridge */}
           <mesh
             castShadow
             receiveShadow
-            material={materials.primary}
+            material={
+              customization.outfitStyle === 'offshoulder' || customization.outfitStyle === 'dress'
+                ? materials.skin
+                : materials.primary
+            }
             position={[0, 0.43, 0]}
             rotation={[0, 0, Math.PI / 2]}
           >
-            <capsuleGeometry args={[0.11, 0.24, 8, 16]} />
+            <capsuleGeometry args={[isFeminine ? 0.098 : 0.11, isFeminine ? 0.21 : 0.24, 8, 16]} />
           </mesh>
 
           {/* OUTFIT DETAILS BY STYLE */}
           {customization.outfitStyle === 'jacket' && (
             <group>
-              {/* Inner Shirt */}
               <mesh castShadow material={materials.white} position={[0, 0.27, 0.165]}>
                 <boxGeometry args={[0.12, 0.36, 0.08]} />
               </mesh>
-              {/* Popped Bomber Collar */}
               <mesh castShadow material={materials.secondary} position={[0, 0.48, -0.01]}>
                 <torusGeometry args={[0.135, 0.035, 10, 20, Math.PI * 1.35]} />
               </mesh>
-              {/* Gold Zipper Trim */}
-              <mesh castShadow material={materials.gold} position={[0.065, 0.25, 0.2]}>
+              <mesh castShadow material={materials.gold} position={[0.065, 0.25, 0.195]}>
                 <boxGeometry args={[0.014, 0.38, 0.02]} />
               </mesh>
             </group>
@@ -411,19 +670,21 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
           {customization.outfitStyle === 'hoodie' && (
             <group>
-              {/* Cozy Hood Resting Behind Neck */}
-              <mesh castShadow material={materials.primary} position={[0, 0.48, -0.14]} rotation={[0.4, 0, 0]}>
+              <mesh
+                castShadow
+                material={materials.primary}
+                position={[0, 0.48, -0.14]}
+                rotation={[0.4, 0, 0]}
+              >
                 <sphereGeometry args={[0.16, 16, 12]} />
               </mesh>
-              {/* Front Kangaroo Pocket */}
-              <mesh castShadow material={materials.secondary} position={[0, 0.14, 0.18]}>
-                <boxGeometry args={[0.22, 0.13, 0.06]} />
+              <mesh castShadow material={materials.secondary} position={[0, 0.14, 0.17]}>
+                <boxGeometry args={[0.2, 0.13, 0.06]} />
               </mesh>
-              {/* Drawstrings */}
-              <mesh castShadow material={materials.white} position={[-0.05, 0.36, 0.2]}>
+              <mesh castShadow material={materials.white} position={[-0.05, 0.36, 0.19]}>
                 <capsuleGeometry args={[0.01, 0.12, 4, 8]} />
               </mesh>
-              <mesh castShadow material={materials.white} position={[0.05, 0.36, 0.2]}>
+              <mesh castShadow material={materials.white} position={[0.05, 0.36, 0.19]}>
                 <capsuleGeometry args={[0.01, 0.12, 4, 8]} />
               </mesh>
             </group>
@@ -431,52 +692,98 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
           {customization.outfitStyle === 'blazer' && (
             <group>
-              {/* Crisp Dress Shirt V */}
-              <mesh castShadow material={materials.white} position={[0, 0.32, 0.168]}>
-                <boxGeometry args={[0.14, 0.28, 0.07]} />
+              <mesh castShadow material={materials.white} position={[0, 0.32, 0.16]}>
+                <boxGeometry args={[0.13, 0.28, 0.07]} />
               </mesh>
-              {/* Tailored Lapels */}
               <mesh
                 castShadow
                 material={materials.secondary}
-                position={[-0.075, 0.33, 0.195]}
+                position={[-0.07, 0.33, 0.185]}
                 rotation={[0, 0, -0.22]}
               >
-                <boxGeometry args={[0.05, 0.26, 0.03]} />
+                <boxGeometry args={[0.048, 0.26, 0.03]} />
               </mesh>
               <mesh
                 castShadow
                 material={materials.secondary}
-                position={[0.075, 0.33, 0.195]}
+                position={[0.07, 0.33, 0.185]}
                 rotation={[0, 0, 0.22]}
               >
-                <boxGeometry args={[0.05, 0.26, 0.03]} />
+                <boxGeometry args={[0.048, 0.26, 0.03]} />
               </mesh>
-              {/* Gold Pocket Square */}
-              <mesh castShadow material={materials.gold} position={[0.11, 0.35, 0.195]}>
-                <boxGeometry args={[0.055, 0.03, 0.025]} />
+              <mesh castShadow material={materials.gold} position={[0.1, 0.35, 0.185]}>
+                <boxGeometry args={[0.05, 0.028, 0.025]} />
               </mesh>
             </group>
           )}
 
           {customization.outfitStyle === 'vest' && (
             <group>
-              {/* Quilted Puffer Ribs */}
               <mesh castShadow material={materials.secondary} position={[0, 0.36, 0]}>
-                <cylinderGeometry args={[0.225, 0.22, 0.11, 20]} />
+                <cylinderGeometry args={[0.22, 0.21, 0.11, 20]} />
               </mesh>
               <mesh castShadow material={materials.secondary} position={[0, 0.23, 0]}>
-                <cylinderGeometry args={[0.22, 0.205, 0.11, 20]} />
+                <cylinderGeometry args={[0.21, 0.195, 0.11, 20]} />
               </mesh>
               <mesh castShadow material={materials.primary} position={[0, 0.11, 0]}>
-                <cylinderGeometry args={[0.205, 0.185, 0.1, 20]} />
+                <cylinderGeometry args={[0.195, 0.175, 0.1, 20]} />
+              </mesh>
+            </group>
+          )}
+
+          {customization.outfitStyle === 'dress' && (
+            <group>
+              {/* Sweetheart Bodice Accent & Gold Neckline */}
+              <mesh castShadow material={materials.gold} position={[0, 0.42, 0.02]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.11, 0.014, 8, 20]} />
+              </mesh>
+              <mesh castShadow material={materials.secondary} position={[0, 0.08, 0]}>
+                <cylinderGeometry args={[0.158, 0.165, 0.07, 20]} />
+              </mesh>
+            </group>
+          )}
+
+          {customization.outfitStyle === 'skirt_set' && (
+            <group>
+              {/* Cropped Jacket Collar & White Crop Top */}
+              <mesh castShadow material={materials.white} position={[0, 0.24, 0.152]}>
+                <boxGeometry args={[0.14, 0.26, 0.06]} />
+              </mesh>
+              <mesh castShadow material={materials.gold} position={[0, 0.39, 0.17]}>
+                <sphereGeometry args={[0.02, 10, 10]} />
+              </mesh>
+            </group>
+          )}
+
+          {customization.outfitStyle === 'offshoulder' && (
+            <group>
+              {/* Folded Bardot Off-Shoulder Knit Collar */}
+              <mesh
+                castShadow
+                material={materials.secondary}
+                position={[0, 0.37, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+              >
+                <torusGeometry args={[0.195, 0.042, 12, 24]} />
+              </mesh>
+            </group>
+          )}
+
+          {customization.outfitStyle === 'jumpsuit' && (
+            <group>
+              {/* Deep V-Neck & Gold Statement Necklace */}
+              <mesh castShadow material={materials.skin} position={[0, 0.36, 0.155]}>
+                <boxGeometry args={[0.09, 0.16, 0.06]} />
+              </mesh>
+              <mesh castShadow material={materials.gold} position={[0, 0.41, 0.13]} rotation={[0.9, 0, 0]}>
+                <torusGeometry args={[0.105, 0.014, 8, 20, Math.PI]} />
               </mesh>
             </group>
           )}
 
           {/* NECK */}
           <mesh castShadow material={materials.skin} position={[0, 0.52, 0]}>
-            <cylinderGeometry args={[0.075, 0.085, 0.12, 16]} />
+            <cylinderGeometry args={[isFeminine ? 0.068 : 0.075, isFeminine ? 0.078 : 0.085, 0.12, 16]} />
           </mesh>
 
           {/* HEAD & EXPRESSIVE FACE */}
@@ -487,24 +794,42 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             </mesh>
 
             {/* Ears */}
-            <mesh castShadow material={materials.skin} position={[-0.23, -0.01, 0]} scale={[0.45, 0.8, 0.6]}>
+            <mesh
+              castShadow
+              material={materials.skin}
+              position={[-0.23, -0.01, 0]}
+              scale={[0.45, 0.8, 0.6]}
+            >
               <sphereGeometry args={[0.06, 12, 12]} />
             </mesh>
-            <mesh castShadow material={materials.skin} position={[0.23, -0.01, 0]} scale={[0.45, 0.8, 0.6]}>
+            <mesh
+              castShadow
+              material={materials.skin}
+              position={[0.23, -0.01, 0]}
+              scale={[0.45, 0.8, 0.6]}
+            >
               <sphereGeometry args={[0.06, 12, 12]} />
             </mesh>
 
             {/* Cute Button Nose */}
             <mesh castShadow material={materials.skin} position={[0, -0.015, 0.23]}>
-              <sphereGeometry args={[0.026, 12, 12]} />
+              <sphereGeometry args={[isFeminine ? 0.022 : 0.026, 12, 12]} />
             </mesh>
 
             {/* Cheek Blush */}
-            <mesh material={materials.blush} position={[-0.11, -0.045, 0.202]} rotation={[0, -0.35, 0]}>
-              <circleGeometry args={[0.036, 16]} />
+            <mesh
+              material={materials.blush}
+              position={[-0.11, -0.042, 0.203]}
+              rotation={[0, -0.35, 0]}
+            >
+              <circleGeometry args={[isFeminine ? 0.042 : 0.034, 16]} />
             </mesh>
-            <mesh material={materials.blush} position={[0.11, -0.045, 0.202]} rotation={[0, 0.35, 0]}>
-              <circleGeometry args={[0.036, 16]} />
+            <mesh
+              material={materials.blush}
+              position={[0.11, -0.042, 0.203]}
+              rotation={[0, 0.35, 0]}
+            >
+              <circleGeometry args={[isFeminine ? 0.042 : 0.034, 16]} />
             </mesh>
 
             {/* Left Eye Assembly */}
@@ -519,6 +844,25 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               <mesh material={materials.white} position={[0.008, 0.01, 0.022]}>
                 <sphereGeometry args={[0.007, 8, 8]} />
               </mesh>
+              {/* Feminine Winged Eyelashes */}
+              {isFeminine && (
+                <group>
+                  <mesh
+                    material={materials.dark}
+                    position={[-0.006, 0.033, 0.012]}
+                    rotation={[0, 0, 0.22]}
+                  >
+                    <capsuleGeometry args={[0.0055, 0.042, 4, 8]} />
+                  </mesh>
+                  <mesh
+                    material={materials.dark}
+                    position={[-0.032, 0.028, 0.01]}
+                    rotation={[0, 0, 0.65]}
+                  >
+                    <coneGeometry args={[0.007, 0.024, 6]} />
+                  </mesh>
+                </group>
+              )}
             </group>
 
             {/* Right Eye Assembly */}
@@ -533,90 +877,151 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               <mesh material={materials.white} position={[0.008, 0.01, 0.022]}>
                 <sphereGeometry args={[0.007, 8, 8]} />
               </mesh>
+              {/* Feminine Winged Eyelashes */}
+              {isFeminine && (
+                <group>
+                  <mesh
+                    material={materials.dark}
+                    position={[0.006, 0.033, 0.012]}
+                    rotation={[0, 0, -0.22]}
+                  >
+                    <capsuleGeometry args={[0.0055, 0.042, 4, 8]} />
+                  </mesh>
+                  <mesh
+                    material={materials.dark}
+                    position={[0.032, 0.028, 0.01]}
+                    rotation={[0, 0, -0.65]}
+                  >
+                    <coneGeometry args={[0.007, 0.024, 6]} />
+                  </mesh>
+                </group>
+              )}
             </group>
 
-            {/* Eyebrows */}
+            {/* Eyebrows (Always cleanly visible below the hairline!) */}
             <mesh
               material={materials.hair}
-              position={[-0.085, 0.082, 0.208]}
-              rotation={[0, -0.2, 0.1]}
+              position={[-0.085, 0.084, 0.208]}
+              rotation={[0, -0.2, isFeminine ? 0.16 : 0.08]}
             >
-              <capsuleGeometry args={[0.009, 0.042, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.042, 4, 8]} />
             </mesh>
             <mesh
               material={materials.hair}
-              position={[0.085, 0.082, 0.208]}
-              rotation={[0, 0.2, -0.1]}
+              position={[0.085, 0.084, 0.208]}
+              rotation={[0, 0.2, isFeminine ? -0.16 : -0.08]}
             >
-              <capsuleGeometry args={[0.009, 0.042, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.042, 4, 8]} />
             </mesh>
 
-            {/* Expressive Smile / Mouth */}
+            {/* Expressive Smile / Lips */}
             <mesh
-              material={materials.dark}
+              material={materials.lipTint}
               position={[0, -0.072, 0.214]}
               rotation={[Math.PI * 0.95, 0, 0]}
             >
-              <torusGeometry args={[0.028, 0.006, 8, 16, Math.PI]} />
+              <torusGeometry args={[0.026, isFeminine ? 0.0075 : 0.006, 8, 16, Math.PI]} />
             </mesh>
 
-            {/* 3D SCULPTED HAIRSTYLES */}
+            {/* ===================================================================
+                9 RE-SCULPTED 3D HAIRSTYLES (NEVER COVER THE EYES OR FACE!)
+                =================================================================== */}
+
+            {/* 1. SPIKY / MODERN TEXTURED CROP (Smooth sculpted locks swept up above forehead) */}
             {customization.hairStyle === 'spiky' && (
               <group>
-                {/* Hair Cap */}
-                <mesh castShadow material={materials.hair} position={[0, 0.06, -0.02]} scale={[1.05, 0.95, 1.06]}>
-                  <sphereGeometry args={[0.23, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
+                <CraniumHairCap material={materials.hair} />
+                {/* Sculpted Upward Pompadour / Textured Locks (High at y=0.19..0.24) */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, 0.21, 0.11]}
+                  rotation={[-0.35, 0, 0.15]}
+                  scale={[1.1, 0.65, 1.4]}
+                >
+                  <sphereGeometry args={[0.095, 16, 14]} />
                 </mesh>
-                {/* Textured Stylized Spikes / Swoops */}
-                <mesh castShadow material={materials.hair} position={[0, 0.22, 0.09]} rotation={[0.45, 0, 0]}>
-                  <coneGeometry args={[0.09, 0.22, 10]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.095, 0.19, 0.09]}
+                  rotation={[-0.25, 0.2, 0.45]}
+                  scale={[0.9, 0.6, 1.3]}
+                >
+                  <sphereGeometry args={[0.085, 14, 12]} />
                 </mesh>
-                <mesh castShadow material={materials.hair} position={[-0.1, 0.2, 0.07]} rotation={[0.35, 0, 0.38]}>
-                  <coneGeometry args={[0.08, 0.2, 10]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.095, 0.19, 0.09]}
+                  rotation={[-0.25, -0.2, -0.45]}
+                  scale={[0.9, 0.6, 1.3]}
+                >
+                  <sphereGeometry args={[0.085, 14, 12]} />
                 </mesh>
-                <mesh castShadow material={materials.hair} position={[0.1, 0.2, 0.07]} rotation={[0.35, 0, -0.38]}>
-                  <coneGeometry args={[0.08, 0.2, 10]} />
-                </mesh>
-                <mesh castShadow material={materials.hair} position={[0, 0.23, -0.05]} rotation={[-0.25, 0, 0]}>
-                  <coneGeometry args={[0.1, 0.2, 10]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, 0.23, -0.02]}
+                  rotation={[0.2, 0, 0]}
+                  scale={[1.2, 0.65, 1.3]}
+                >
+                  <sphereGeometry args={[0.105, 16, 14]} />
                 </mesh>
               </group>
             )}
 
+            {/* 2. BOB / CYBER CHIC BOB (Frames the jaw cleanly on the sides, high side-part fringe) */}
             {customization.hairStyle === 'bob' && (
               <group>
-                {/* Top Crown */}
-                <mesh castShadow material={materials.hair} position={[0, 0.04, -0.01]} scale={[1.08, 0.98, 1.08]}>
-                  <sphereGeometry args={[0.235, 22, 18, 0, Math.PI * 2, 0, Math.PI * 0.68]} />
+                <CraniumHairCap material={materials.hair} />
+                {/* Left & Right Sleek Chin-Length Bob Panels (Outside the face at x = ±0.215) */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.215, -0.02, 0.01]}
+                  rotation={[0.08, 0, 0.08]}
+                  scale={[0.55, 1.15, 0.95]}
+                >
+                  <capsuleGeometry args={[0.095, 0.16, 10, 14]} />
                 </mesh>
-                {/* Side Bob Wings */}
-                <mesh castShadow material={materials.hair} position={[-0.21, -0.02, 0.02]} rotation={[0, 0, 0.12]}>
-                  <capsuleGeometry args={[0.065, 0.18, 8, 12]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.215, -0.02, 0.01]}
+                  rotation={[0.08, 0, -0.08]}
+                  scale={[0.55, 1.15, 0.95]}
+                >
+                  <capsuleGeometry args={[0.095, 0.16, 10, 14]} />
                 </mesh>
-                <mesh castShadow material={materials.hair} position={[0.21, -0.02, 0.02]} rotation={[0, 0, -0.12]}>
-                  <capsuleGeometry args={[0.065, 0.18, 8, 12]} />
-                </mesh>
-                {/* Front Side-Swept Fringe */}
-                <mesh castShadow material={materials.hair} position={[0.04, 0.13, 0.19]} rotation={[0.2, 0, -0.45]}>
-                  <capsuleGeometry args={[0.048, 0.16, 8, 12]} />
+                {/* High Side-Swept Fringe (Sits at y=0.165, well above eyebrows at y=0.084!) */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.05, 0.168, 0.175]}
+                  rotation={[0.15, -0.22, -1.25]}
+                >
+                  <capsuleGeometry args={[0.042, 0.14, 8, 12]} />
                 </mesh>
               </group>
             )}
 
+            {/* 3. CURLY / VOLUMINOUS AFRO PUFF (Full base cap + high crown curl clusters) */}
             {customization.hairStyle === 'curly' && (
               <group>
+                <CraniumHairCap material={materials.hair} />
                 {[
-                  [0, 0.21, 0.04, 0.11],
-                  [-0.13, 0.18, 0.05, 0.1],
-                  [0.13, 0.18, 0.05, 0.1],
-                  [-0.19, 0.09, -0.02, 0.095],
-                  [0.19, 0.09, -0.02, 0.095],
-                  [0, 0.19, -0.11, 0.115],
-                  [-0.12, 0.12, -0.14, 0.1],
-                  [0.12, 0.12, -0.14, 0.1],
-                  [0, 0.06, -0.19, 0.1],
-                  [-0.06, 0.16, 0.15, 0.075],
-                  [0.07, 0.16, 0.15, 0.075],
+                  [0, 0.23, 0.05, 0.115],
+                  [-0.13, 0.2, 0.04, 0.105],
+                  [0.13, 0.2, 0.04, 0.105],
+                  [-0.2, 0.11, -0.03, 0.1],
+                  [0.2, 0.11, -0.03, 0.1],
+                  [0, 0.22, -0.11, 0.12],
+                  [-0.13, 0.14, -0.15, 0.105],
+                  [0.13, 0.14, -0.15, 0.105],
+                  [0, 0.05, -0.2, 0.11],
+                  [-0.07, 0.19, 0.13, 0.078],
+                  [0.07, 0.19, 0.13, 0.078],
                 ].map(([x, y, z, r], idx) => (
                   <mesh key={idx} castShadow material={materials.hair} position={[x, y, z]}>
                     <sphereGeometry args={[r, 14, 14]} />
@@ -625,51 +1030,298 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               </group>
             )}
 
+            {/* 4. PONYTAIL / SLEEK HIGH PONYTAIL (Cascading curved tail at the back) */}
             {customization.hairStyle === 'ponytail' && (
               <group>
-                <mesh castShadow material={materials.hair} position={[0, 0.05, -0.01]} scale={[1.05, 0.96, 1.06]}>
-                  <sphereGeometry args={[0.232, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.64]} />
+                <CraniumHairCap material={materials.hair} />
+                {/* High Side-Part Temple Sweeps */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.08, 0.17, 0.165]}
+                  rotation={[0.1, 0.25, 1.15]}
+                >
+                  <capsuleGeometry args={[0.038, 0.11, 8, 12]} />
                 </mesh>
-                {/* Gold Hair Tie */}
-                <mesh castShadow material={materials.gold} position={[0, 0.12, -0.23]} rotation={[0.5, 0, 0]}>
-                  <torusGeometry args={[0.048, 0.016, 8, 16]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.08, 0.17, 0.165]}
+                  rotation={[0.1, -0.25, -1.15]}
+                >
+                  <capsuleGeometry args={[0.038, 0.11, 8, 12]} />
                 </mesh>
-                {/* Flowing Ponytail Volume */}
-                <mesh castShadow material={materials.hair} position={[0, 0.03, -0.32]} rotation={[0.75, 0, 0]}>
-                  <capsuleGeometry args={[0.075, 0.22, 8, 16]} />
+                {/* Gold Scrunchie Ring */}
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[0, 0.12, -0.23]}
+                  rotation={[0.45, 0, 0]}
+                >
+                  <torusGeometry args={[0.052, 0.018, 10, 18]} />
+                </mesh>
+                {/* Flowing Multi-Segment Ponytail */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, 0.05, -0.31]}
+                  rotation={[0.55, 0, 0]}
+                >
+                  <capsuleGeometry args={[0.078, 0.18, 10, 16]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, -0.12, -0.35]}
+                  rotation={[0.15, 0, 0]}
+                >
+                  <capsuleGeometry args={[0.062, 0.18, 10, 16]} />
                 </mesh>
               </group>
             )}
 
+            {/* 5. WAVES / MEDIUM LAYERED WOLF CUT */}
             {customization.hairStyle === 'waves' && (
               <group>
-                <mesh castShadow material={materials.hair} position={[0, 0.06, -0.01]} scale={[1.07, 0.97, 1.07]}>
-                  <sphereGeometry args={[0.234, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.65]} />
+                <CraniumHairCap material={materials.hair} />
+                {/* High Swept Forehead Wave */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.04, 0.19, 0.14]}
+                  rotation={[0.2, 0.25, -1.1]}
+                >
+                  <capsuleGeometry args={[0.055, 0.16, 8, 14]} />
                 </mesh>
-                {/* Swept Wave Crest */}
-                <mesh castShadow material={materials.hair} position={[-0.05, 0.2, 0.12]} rotation={[0.2, 0.3, -0.6]}>
-                  <capsuleGeometry args={[0.065, 0.18, 8, 14]} />
+                {/* Layered Side Waves Behind Ears */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.21, -0.05, -0.06]}
+                  rotation={[0.18, 0, 0.15]}
+                >
+                  <capsuleGeometry args={[0.065, 0.22, 8, 12]} />
                 </mesh>
-                <mesh castShadow material={materials.hair} position={[-0.19, -0.04, -0.06]} rotation={[0.15, 0, 0.15]}>
-                  <capsuleGeometry args={[0.06, 0.22, 8, 12]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.21, -0.05, -0.06]}
+                  rotation={[0.18, 0, -0.15]}
+                >
+                  <capsuleGeometry args={[0.065, 0.22, 8, 12]} />
                 </mesh>
-                <mesh castShadow material={materials.hair} position={[0.19, -0.04, -0.06]} rotation={[0.15, 0, -0.15]}>
-                  <capsuleGeometry args={[0.06, 0.22, 8, 12]} />
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, -0.08, -0.18]}
+                  scale={[1.2, 1.0, 0.65]}
+                >
+                  <capsuleGeometry args={[0.11, 0.18, 8, 12]} />
                 </mesh>
               </group>
             )}
 
-            {/* CUSTOMIZABLE ACCESSORIES */}
+            {/* 6. LONG WAVES (FEMININE) — Glamorous Long Wavy Hair Flowing Over Shoulders & Back */}
+            {customization.hairStyle === 'long_waves' && (
+              <group>
+                <CraniumHairCap material={materials.hair} />
+                {/* Curtain Bangs Framing the Forehead High & Wide */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.1, 0.168, 0.162]}
+                  rotation={[0.15, 0.3, 1.05]}
+                >
+                  <capsuleGeometry args={[0.042, 0.13, 8, 12]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.1, 0.168, 0.162]}
+                  rotation={[0.15, -0.3, -1.05]}
+                >
+                  <capsuleGeometry args={[0.042, 0.13, 8, 12]} />
+                </mesh>
+                {/* Left & Right Front Shoulder Cascades */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.2, -0.14, 0.04]}
+                  rotation={[-0.08, 0, 0.08]}
+                >
+                  <capsuleGeometry args={[0.058, 0.34, 10, 14]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.2, -0.14, 0.04]}
+                  rotation={[-0.08, 0, -0.08]}
+                >
+                  <capsuleGeometry args={[0.058, 0.34, 10, 14]} />
+                </mesh>
+                {/* Full Flowing Back Hair Mantle */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, -0.16, -0.17]}
+                  rotation={[0.12, 0, 0]}
+                  scale={[1.35, 1.0, 0.55]}
+                >
+                  <capsuleGeometry args={[0.15, 0.36, 12, 16]} />
+                </mesh>
+              </group>
+            )}
+
+            {/* 7. LONG STRAIGHT (FEMININE) — Sleek Long Straight Hair with High Side Fringe */}
+            {customization.hairStyle === 'long_straight' && (
+              <group>
+                <CraniumHairCap material={materials.hair} />
+                {/* Delicate High Forehead Fringe (Above Eyebrows at y=0.162) */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, 0.165, 0.175]}
+                  rotation={[0.12, 0, Math.PI / 2]}
+                  scale={[0.85, 1.0, 0.55]}
+                >
+                  <capsuleGeometry args={[0.042, 0.21, 8, 12]} />
+                </mesh>
+                {/* Sleek Side Strands Framing Jawline */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.215, -0.15, 0.02]}
+                  scale={[0.5, 1.0, 0.85]}
+                >
+                  <capsuleGeometry args={[0.075, 0.38, 10, 14]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.215, -0.15, 0.02]}
+                  scale={[0.5, 1.0, 0.85]}
+                >
+                  <capsuleGeometry args={[0.075, 0.38, 10, 14]} />
+                </mesh>
+                {/* Long Straight Back Sheet */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0, -0.18, -0.18]}
+                  rotation={[0.08, 0, 0]}
+                  scale={[1.4, 1.0, 0.45]}
+                >
+                  <capsuleGeometry args={[0.155, 0.42, 12, 16]} />
+                </mesh>
+              </group>
+            )}
+
+            {/* 8. TWINTAILS / MARIA-CHIQUINHA (FEMININE) — High Side Ties with Long Bouncy Twin Tails */}
+            {customization.hairStyle === 'twintails' && (
+              <group>
+                <CraniumHairCap material={materials.hair} />
+                {/* Soft Side-Parted Bangs */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.09, 0.168, 0.165]}
+                  rotation={[0.15, 0.25, 1.1]}
+                >
+                  <capsuleGeometry args={[0.038, 0.12, 8, 12]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.09, 0.168, 0.165]}
+                  rotation={[0.15, -0.25, -1.1]}
+                >
+                  <capsuleGeometry args={[0.038, 0.12, 8, 12]} />
+                </mesh>
+                {/* Left & Right Gold Hair Ties */}
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[-0.22, 0.12, -0.06]}
+                  rotation={[0, 0.4, 0.6]}
+                >
+                  <torusGeometry args={[0.042, 0.014, 8, 16]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[0.22, 0.12, -0.06]}
+                  rotation={[0, -0.4, -0.6]}
+                >
+                  <torusGeometry args={[0.042, 0.014, 8, 16]} />
+                </mesh>
+                {/* Left & Right Long Cascading Twin Tails */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.29, -0.08, -0.08]}
+                  rotation={[0.12, 0, 0.22]}
+                >
+                  <capsuleGeometry args={[0.062, 0.34, 10, 16]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.29, -0.08, -0.08]}
+                  rotation={[0.12, 0, -0.22]}
+                >
+                  <capsuleGeometry args={[0.062, 0.34, 10, 16]} />
+                </mesh>
+              </group>
+            )}
+
+            {/* 9. HIGH BUN / COQUE ALTO ELEGANTE (FEMININE) — Crown Bun + Face-Framing Tendrils */}
+            {customization.hairStyle === 'high_bun' && (
+              <group>
+                <CraniumHairCap material={materials.hair} />
+                {/* Voluminous Sculpted Top Bun */}
+                <mesh castShadow material={materials.hair} position={[0, 0.28, -0.06]}>
+                  <sphereGeometry args={[0.115, 18, 16]} />
+                </mesh>
+                {/* Gold Bun Cuff */}
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[0, 0.21, -0.05]}
+                  rotation={[Math.PI / 2 - 0.15, 0, 0]}
+                >
+                  <torusGeometry args={[0.088, 0.014, 8, 20]} />
+                </mesh>
+                {/* Delicate Cheek-Framing Tendrils */}
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[-0.215, -0.02, 0.08]}
+                  rotation={[0.1, 0, 0.12]}
+                >
+                  <capsuleGeometry args={[0.022, 0.16, 6, 10]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.hair}
+                  position={[0.215, -0.02, 0.08]}
+                  rotation={[0.1, 0, -0.12]}
+                >
+                  <capsuleGeometry args={[0.022, 0.16, 6, 10]} />
+                </mesh>
+              </group>
+            )}
+
+            {/* ===================================================================
+                CUSTOMIZABLE ACCESSORIES (8 OPTIONS)
+                =================================================================== */}
             {customization.accessory === 'glasses' && (
               <group position={[0, 0.03, 0.22]}>
-                {/* Left & Right Designer Lenses */}
                 <mesh castShadow material={materials.glassesLens} position={[-0.082, 0, 0]}>
                   <boxGeometry args={[0.11, 0.065, 0.02]} />
                 </mesh>
                 <mesh castShadow material={materials.glassesLens} position={[0.082, 0, 0]}>
                   <boxGeometry args={[0.11, 0.065, 0.02]} />
                 </mesh>
-                {/* Gold Frame & Bridge */}
                 <mesh castShadow material={materials.gold} position={[0, 0.015, 0.005]}>
                   <boxGeometry args={[0.29, 0.012, 0.022]} />
                 </mesh>
@@ -678,11 +1330,9 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
             {customization.accessory === 'headphones' && (
               <group>
-                {/* Headband Arch */}
                 <mesh castShadow material={materials.dark} position={[0, 0.04, 0]}>
                   <torusGeometry args={[0.255, 0.022, 10, 24, Math.PI]} />
                 </mesh>
-                {/* Earcups */}
                 <mesh
                   castShadow
                   material={materials.dark}
@@ -740,96 +1390,224 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             )}
 
             {customization.accessory === 'beanie' && (
-              <group position={[0, 0.14, -0.02]} rotation={[-0.18, 0, 0]}>
+              <group position={[0, 0.14, -0.03]} rotation={[-0.24, 0, 0]}>
                 <mesh castShadow material={materials.primary}>
-                  <sphereGeometry args={[0.242, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+                  <sphereGeometry args={[0.244, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
                 </mesh>
-                <mesh castShadow material={materials.secondary} position={[0, 0.02, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[0.228, 0.035, 10, 24]} />
+                <mesh
+                  castShadow
+                  material={materials.secondary}
+                  position={[0, 0.02, 0]}
+                  rotation={[Math.PI / 2, 0, 0]}
+                >
+                  <torusGeometry args={[0.232, 0.034, 10, 24]} />
                 </mesh>
                 <mesh castShadow material={materials.white} position={[0, 0.25, 0]}>
                   <sphereGeometry args={[0.048, 12, 12]} />
                 </mesh>
               </group>
             )}
+
+            {customization.accessory === 'tiara' && (
+              <group position={[0, 0.21, 0.06]} rotation={[-0.35, 0, 0]}>
+                <mesh castShadow material={materials.gold} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[0.175, 0.012, 8, 24, Math.PI]} />
+                </mesh>
+                <mesh castShadow material={materials.crystal} position={[0, 0.045, 0.17]}>
+                  <octahedronGeometry args={[0.032, 0]} />
+                </mesh>
+                <mesh castShadow material={materials.gold} position={[-0.055, 0.025, 0.16]}>
+                  <octahedronGeometry args={[0.02, 0]} />
+                </mesh>
+                <mesh castShadow material={materials.gold} position={[0.055, 0.025, 0.16]}>
+                  <octahedronGeometry args={[0.02, 0]} />
+                </mesh>
+              </group>
+            )}
+
+            {customization.accessory === 'earrings' && (
+              <group>
+                {/* Left & Right Gold Hoop Earrings */}
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[-0.242, -0.055, 0.01]}
+                  rotation={[0, Math.PI / 2, 0]}
+                >
+                  <torusGeometry args={[0.032, 0.006, 8, 18]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.gold}
+                  position={[0.242, -0.055, 0.01]}
+                  rotation={[0, Math.PI / 2, 0]}
+                >
+                  <torusGeometry args={[0.032, 0.006, 8, 18]} />
+                </mesh>
+              </group>
+            )}
+
+            {customization.accessory === 'bow' && (
+              <group position={[0, 0.22, -0.15]} rotation={[0.45, 0, 0]}>
+                {/* Center Ribbon Knot */}
+                <mesh castShadow material={materials.primary}>
+                  <sphereGeometry args={[0.032, 12, 12]} />
+                </mesh>
+                {/* Left & Right Satin Bow Loops */}
+                <mesh
+                  castShadow
+                  material={materials.primary}
+                  position={[-0.075, 0.01, -0.01]}
+                  rotation={[0, 0, 0.25]}
+                  scale={[1.2, 0.75, 0.45]}
+                >
+                  <sphereGeometry args={[0.068, 14, 12]} />
+                </mesh>
+                <mesh
+                  castShadow
+                  material={materials.primary}
+                  position={[0.075, 0.01, -0.01]}
+                  rotation={[0, 0, -0.25]}
+                  scale={[1.2, 0.75, 0.45]}
+                >
+                  <sphereGeometry args={[0.068, 14, 12]} />
+                </mesh>
+              </group>
+            )}
           </group>
 
           {/* LEFT ARM */}
-          <group ref={leftArmRef} position={[-0.26, 0.42, 0]}>
-            <mesh castShadow material={materials.primary} position={[0, -0.11, 0]}>
-              <capsuleGeometry args={[0.058, 0.16, 8, 12]} />
+          <group ref={leftArmRef} position={[isFeminine ? -0.235 : -0.26, 0.42, 0]}>
+            <mesh
+              castShadow
+              material={
+                customization.outfitStyle === 'dress' || customization.outfitStyle === 'jumpsuit'
+                  ? materials.skin
+                  : materials.primary
+              }
+              position={[0, -0.11, 0]}
+            >
+              <capsuleGeometry args={[isFeminine ? 0.05 : 0.058, 0.16, 8, 12]} />
             </mesh>
             <group ref={leftForearmRef} position={[0, -0.22, 0]}>
-              <mesh castShadow material={materials.primary} position={[0, -0.09, 0]}>
-                <capsuleGeometry args={[0.05, 0.13, 8, 12]} />
+              <mesh
+                castShadow
+                material={
+                  customization.outfitStyle === 'dress' ||
+                  customization.outfitStyle === 'jumpsuit' ||
+                  customization.outfitStyle === 'skirt_set'
+                    ? materials.skin
+                    : materials.primary
+                }
+                position={[0, -0.09, 0]}
+              >
+                <capsuleGeometry args={[isFeminine ? 0.044 : 0.05, 0.13, 8, 12]} />
               </mesh>
               {/* Hand */}
               <mesh castShadow material={materials.skin} position={[0, -0.21, 0]}>
-                <sphereGeometry args={[0.052, 12, 12]} />
+                <sphereGeometry args={[isFeminine ? 0.046 : 0.052, 12, 12]} />
               </mesh>
             </group>
           </group>
 
           {/* RIGHT ARM */}
-          <group ref={rightArmRef} position={[0.26, 0.42, 0]}>
-            <mesh castShadow material={materials.primary} position={[0, -0.11, 0]}>
-              <capsuleGeometry args={[0.058, 0.16, 8, 12]} />
+          <group ref={rightArmRef} position={[isFeminine ? 0.235 : 0.26, 0.42, 0]}>
+            <mesh
+              castShadow
+              material={
+                customization.outfitStyle === 'dress' || customization.outfitStyle === 'jumpsuit'
+                  ? materials.skin
+                  : materials.primary
+              }
+              position={[0, -0.11, 0]}
+            >
+              <capsuleGeometry args={[isFeminine ? 0.05 : 0.058, 0.16, 8, 12]} />
             </mesh>
             <group ref={rightForearmRef} position={[0, -0.22, 0]}>
-              <mesh castShadow material={materials.primary} position={[0, -0.09, 0]}>
-                <capsuleGeometry args={[0.05, 0.13, 8, 12]} />
+              <mesh
+                castShadow
+                material={
+                  customization.outfitStyle === 'dress' ||
+                  customization.outfitStyle === 'jumpsuit' ||
+                  customization.outfitStyle === 'skirt_set'
+                    ? materials.skin
+                    : materials.primary
+                }
+                position={[0, -0.09, 0]}
+              >
+                <capsuleGeometry args={[isFeminine ? 0.044 : 0.05, 0.13, 8, 12]} />
               </mesh>
               {/* Hand */}
               <mesh castShadow material={materials.skin} position={[0, -0.21, 0]}>
-                <sphereGeometry args={[0.052, 12, 12]} />
+                <sphereGeometry args={[isFeminine ? 0.046 : 0.052, 12, 12]} />
               </mesh>
             </group>
           </group>
         </group>
 
         {/* LEFT LEG */}
-        <group ref={leftLegRef} position={[-0.095, -0.04, 0]}>
-          <mesh castShadow material={materials.secondary} position={[0, -0.16, 0]}>
-            <capsuleGeometry args={[0.068, 0.22, 8, 12]} />
+        <group ref={leftLegRef} position={[-0.092, -0.04, 0]}>
+          <mesh
+            castShadow
+            material={hasSkirt ? materials.skin : materials.secondary}
+            position={[0, -0.16, 0]}
+          >
+            <capsuleGeometry args={[isFeminine ? 0.062 : 0.068, 0.22, 8, 12]} />
           </mesh>
           <group ref={leftShinRef} position={[0, -0.34, 0]}>
-            <mesh castShadow material={materials.secondary} position={[0, -0.14, 0]}>
-              <capsuleGeometry args={[0.058, 0.2, 8, 12]} />
+            <mesh
+              castShadow
+              material={
+                customization.outfitStyle === 'dress' ? materials.skin : materials.secondary
+              }
+              position={[0, -0.14, 0]}
+            >
+              <capsuleGeometry args={[isFeminine ? 0.052 : 0.058, 0.2, 8, 12]} />
             </mesh>
-            {/* Stylish Sneaker */}
+            {/* Stylish Footwear */}
             <group position={[0, -0.31, 0.035]}>
               <mesh castShadow material={materials.dark} position={[0, 0.02, 0]}>
-                <boxGeometry args={[0.12, 0.07, 0.21]} />
+                <boxGeometry args={[isFeminine ? 0.108 : 0.12, 0.07, 0.2]} />
               </mesh>
               <mesh castShadow material={materials.white} position={[0, -0.015, 0]}>
-                <boxGeometry args={[0.13, 0.028, 0.225]} />
+                <boxGeometry args={[isFeminine ? 0.115 : 0.13, 0.028, 0.215]} />
               </mesh>
               <mesh castShadow material={materials.primary} position={[0, 0.03, 0.04]}>
-                <boxGeometry args={[0.124, 0.025, 0.06]} />
+                <boxGeometry args={[isFeminine ? 0.112 : 0.124, 0.025, 0.06]} />
               </mesh>
             </group>
           </group>
         </group>
 
         {/* RIGHT LEG */}
-        <group ref={rightLegRef} position={[0.095, -0.04, 0]}>
-          <mesh castShadow material={materials.secondary} position={[0, -0.16, 0]}>
-            <capsuleGeometry args={[0.068, 0.22, 8, 12]} />
+        <group ref={rightLegRef} position={[0.092, -0.04, 0]}>
+          <mesh
+            castShadow
+            material={hasSkirt ? materials.skin : materials.secondary}
+            position={[0, -0.16, 0]}
+          >
+            <capsuleGeometry args={[isFeminine ? 0.062 : 0.068, 0.22, 8, 12]} />
           </mesh>
           <group ref={rightShinRef} position={[0, -0.34, 0]}>
-            <mesh castShadow material={materials.secondary} position={[0, -0.14, 0]}>
-              <capsuleGeometry args={[0.058, 0.2, 8, 12]} />
+            <mesh
+              castShadow
+              material={
+                customization.outfitStyle === 'dress' ? materials.skin : materials.secondary
+              }
+              position={[0, -0.14, 0]}
+            >
+              <capsuleGeometry args={[isFeminine ? 0.052 : 0.058, 0.2, 8, 12]} />
             </mesh>
-            {/* Stylish Sneaker */}
+            {/* Stylish Footwear */}
             <group position={[0, -0.31, 0.035]}>
               <mesh castShadow material={materials.dark} position={[0, 0.02, 0]}>
-                <boxGeometry args={[0.12, 0.07, 0.21]} />
+                <boxGeometry args={[isFeminine ? 0.108 : 0.12, 0.07, 0.2]} />
               </mesh>
               <mesh castShadow material={materials.white} position={[0, -0.015, 0]}>
-                <boxGeometry args={[0.13, 0.028, 0.225]} />
+                <boxGeometry args={[isFeminine ? 0.115 : 0.13, 0.028, 0.215]} />
               </mesh>
               <mesh castShadow material={materials.primary} position={[0, 0.03, 0.04]}>
-                <boxGeometry args={[0.124, 0.025, 0.06]} />
+                <boxGeometry args={[isFeminine ? 0.112 : 0.124, 0.025, 0.06]} />
               </mesh>
             </group>
           </group>
@@ -862,7 +1640,11 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
                   className="w-1.5 h-1.5 rounded-full"
                   style={{ backgroundColor: customization.primaryColor }}
                 />
-                <span className={`text-[10px] font-medium tracking-wide ${isLocal ? 'text-amber-300/90' : 'text-slate-100/90'}`}>
+                <span
+                  className={`text-[10px] font-medium tracking-wide ${
+                    isLocal ? 'text-amber-300/90' : 'text-slate-100/90'
+                  }`}
+                >
                   {customization.name}
                 </span>
               </div>

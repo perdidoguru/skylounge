@@ -83,11 +83,41 @@ function sanitizeText(input: unknown, maxLen = 180): string {
 }
 
 function sanitizeCustomization(raw: Partial<AvatarCustomization> | undefined): AvatarCustomization {
-  const validOutfits = ['jacket', 'hoodie', 'blazer', 'vest'] as const;
-  const validHairs = ['spiky', 'bob', 'curly', 'ponytail', 'waves'] as const;
-  const validAccessories = ['none', 'glasses', 'headphones', 'crown', 'beanie'] as const;
+  const validBodies = ['masculine', 'feminine'] as const;
+  const validOutfits = [
+    'jacket',
+    'hoodie',
+    'blazer',
+    'vest',
+    'dress',
+    'skirt_set',
+    'offshoulder',
+    'jumpsuit',
+  ] as const;
+  const validHairs = [
+    'spiky',
+    'bob',
+    'curly',
+    'ponytail',
+    'waves',
+    'long_waves',
+    'long_straight',
+    'twintails',
+    'high_bun',
+  ] as const;
+  const validAccessories = [
+    'none',
+    'glasses',
+    'headphones',
+    'crown',
+    'beanie',
+    'tiara',
+    'earrings',
+    'bow',
+  ] as const;
 
   const name = sanitizeText(raw?.name, 22) || 'Convidado';
+  const bodyStyle = validBodies.includes(raw?.bodyStyle as any) ? raw!.bodyStyle! : 'masculine';
   const skinColor = /^#[0-9a-fA-F]{6}$/.test(raw?.skinColor || '') ? raw!.skinColor! : '#f1c29d';
   const primaryColor = /^#[0-9a-fA-F]{6}$/.test(raw?.primaryColor || '') ? raw!.primaryColor! : '#3b82f6';
   const secondaryColor = /^#[0-9a-fA-F]{6}$/.test(raw?.secondaryColor || '') ? raw!.secondaryColor! : '#1e293b';
@@ -99,6 +129,7 @@ function sanitizeCustomization(raw: Partial<AvatarCustomization> | undefined): A
 
   return {
     name,
+    bodyStyle,
     skinColor,
     outfitStyle,
     primaryColor,

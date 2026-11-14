@@ -546,6 +546,7 @@ export const PlayerController: React.FC = () => {
       <StylizedAvatar
         customization={customization}
         animation={currentAnimState.current}
+        seatId={mySeatId}
         headYaw={localPlayerTransform.headYaw}
         headPitch={localPlayerTransform.headPitch}
         isHost={hostId === myPlayerId}

@@ -47,6 +47,7 @@ const RemotePlayerEntity: React.FC<{ player: PlayerState; isHost: boolean }> = (
       <StylizedAvatar
         customization={player.customization}
         animation={player.animation}
+        seatId={player.seatId}
         headYaw={player.headYaw}
         headPitch={player.headPitch}
         isHost={isHost}
