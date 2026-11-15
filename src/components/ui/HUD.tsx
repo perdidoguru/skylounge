@@ -20,7 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore, tvPlayerBridge } from '../../store/useGameStore';
 import { SEAT_MAP } from '../../../shared/seats';
 import { parseCommentSourceUrl } from '../../../shared/mediaParser';
 import { ChatPanel } from './ChatPanel';
@@ -153,7 +153,13 @@ export const HUD: React.FC = () => {
             {tvAutoplayBlocked && (
               <button
                 type="button"
-                onClick={() => updateSettings({ tvMuted: false, tvVolume: 75 })}
+                onClick={() => {
+                  const currentVol = useGameStore.getState().settings.tvVolume;
+                  const targetVol = currentVol > 0 ? currentVol : 75;
+                  updateSettings({ tvMuted: false, tvVolume: targetVol });
+                  tvPlayerBridge.applyVolume(targetVol, false);
+                  useGameStore.getState().setTVAutoplayBlocked(false);
+                }}
                 className="h-8 px-3 rounded-full bg-amber-500/90 hover:bg-amber-400 text-slate-950 font-bold text-[11px] shadow-lg flex items-center gap-1.5 transition"
               >
                 <Volume2 className="w-3.5 h-3.5" /> Ativar Áudio

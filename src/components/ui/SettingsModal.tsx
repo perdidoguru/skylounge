@@ -1,6 +1,6 @@
 import React from 'react';
 import { Settings, HelpCircle, X, Monitor, MousePointer, Volume2, Sparkles } from 'lucide-react';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore, tvPlayerBridge } from '../../store/useGameStore';
 import { GraphicsQuality } from '../../../shared/types';
 
 export const SettingsModal: React.FC = () => {
@@ -191,12 +191,15 @@ export const SettingsModal: React.FC = () => {
               min={0}
               max={100}
               value={settings.tvVolume}
-              onChange={(e) =>
+              onChange={(e) => {
+                const vol = Number(e.target.value);
+                const muted = vol === 0;
                 updateSettings({
-                  tvVolume: Number(e.target.value),
-                  tvMuted: Number(e.target.value) === 0,
-                })
-              }
+                  tvVolume: vol,
+                  tvMuted: muted,
+                });
+                tvPlayerBridge.applyVolume(vol, muted);
+              }}
               className="w-full h-1.5 accent-amber-400 cursor-pointer"
             />
           </div>

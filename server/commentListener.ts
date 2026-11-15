@@ -324,74 +324,134 @@ export function startOrUpdateRoomCommentListener(
   state.recentComments = [];
   io.to(roomId).emit('comments:updated', state);
 
-  // 1. TWITCH LIVE CHAT LISTENER (Collects filtered unique messages and emits a fresh chunk every 3 seconds)
+  // 1. TWITCH LIVE CHAT LISTENER (Collects filtered unique messages, keeps IRC alive, and emits every 3 seconds)
   if (state.platform === 'twitch') {
     const channel = state.targetId.toLowerCase().replace(/[^a-z0-9_]/g, '');
     let incomingChunk: StreamCommentItem[] = [];
     let sentFirstImmediateBatch = false;
+    let pingTimer: NodeJS.Timeout | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
 
-    try {
-      const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-      handle.ws = ws;
+    const prevCleanup = handle.cleanup;
+    handle.cleanup = () => {
+      prevCleanup();
+      if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
 
-      ws.addEventListener('open', () => {
-        if (closed) return;
-        ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-        ws.send('PASS SCHMOOPIIE');
-        ws.send(`NICK justinfan${Math.floor(10000 + Math.random() * 89999)}`);
-        ws.send(`JOIN #${channel}`);
-      });
+    const connectTwitchIrc = () => {
+      if (closed) return;
+      try {
+        const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+        handle.ws = ws;
 
-      ws.addEventListener('message', (event) => {
-        if (closed) return;
-        const raw = typeof event.data === 'string' ? event.data : String(event.data || '');
-        if (raw.startsWith('PING')) {
-          try {
-            ws.send('PONG :tmi.twitch.tv');
-          } catch {}
-          return;
-        }
+        ws.addEventListener('open', () => {
+          if (closed) {
+            try {
+              ws.close();
+            } catch {}
+            return;
+          }
+          ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+          ws.send('PASS SCHMOOPIIE');
+          ws.send(`NICK justinfan${Math.floor(10000 + Math.random() * 89999)}`);
+          ws.send(`JOIN #${channel}`);
 
-        const lines = raw.split('\r\n');
-        for (const line of lines) {
-          const privIdx = line.indexOf('PRIVMSG #');
-          if (privIdx !== -1) {
-            const msgIdx = line.indexOf(' :', privIdx);
-            if (msgIdx !== -1) {
-              const text = line.slice(msgIdx + 2).trim();
-              const displayMatch = line.match(/display-name=([^;]+)/);
-              const idMatch = line.match(/(?:^|;)id=([^;]+)/);
-              const emotesMatch = line.match(/(?:^|;)emotes=([^;]*)/);
-              const author = displayMatch && displayMatch[1] ? displayMatch[1] : 'chat';
+          if (pingTimer) clearInterval(pingTimer);
+          pingTimer = setInterval(() => {
+            if (!closed && ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send('PING :tmi.twitch.tv');
+              } catch {}
+            }
+          }, 45000);
+        });
 
-              const item = createFilteredCommentItem(
-                author,
-                text,
-                'twitch',
-                handle.recentNormalizedMap,
-                idMatch?.[1],
-                emotesMatch?.[1]
-              );
+        ws.addEventListener('message', (event) => {
+          if (closed) return;
+          const raw = typeof event.data === 'string' ? event.data : String(event.data || '');
+          const lines = raw.split('\r\n');
 
-              if (item) {
-                incomingChunk.push(item);
-                if (incomingChunk.length > 25) {
-                  incomingChunk.shift();
+          for (const line of lines) {
+            if (!line) continue;
+            if (line.startsWith('PING')) {
+              try {
+                ws.send('PONG :tmi.twitch.tv');
+              } catch {}
+              continue;
+            }
+
+            const privIdx = line.indexOf('PRIVMSG #');
+            if (privIdx !== -1) {
+              const msgIdx = line.indexOf(' :', privIdx);
+              if (msgIdx !== -1) {
+                const text = line.slice(msgIdx + 2).trim();
+                const displayMatch = line.match(/(?:^|;)display-name=([^;]*)/);
+                const nickMatch = line.match(/:([a-zA-Z0-9_]+)![a-zA-Z0-9_]+@/);
+                const idMatch = line.match(/(?:^|;)id=([^;]+)/);
+                const emotesMatch = line.match(/(?:^|;)emotes=([^;]*)/);
+                const author =
+                  (displayMatch && displayMatch[1] ? displayMatch[1] : '') ||
+                  (nickMatch && nickMatch[1] ? nickMatch[1] : '') ||
+                  'chat';
+
+                const item = createFilteredCommentItem(
+                  author,
+                  text,
+                  'twitch',
+                  handle.recentNormalizedMap,
+                  idMatch?.[1],
+                  emotesMatch?.[1]
+                );
+
+                if (item) {
+                  incomingChunk.push(item);
+                  if (incomingChunk.length > 25) {
+                    incomingChunk.shift();
+                  }
                 }
               }
             }
           }
-        }
 
-        // Send very first incoming message right away so user sees immediate live confirmation
-        if (!sentFirstImmediateBatch && incomingChunk.length >= 1) {
-          sentFirstImmediateBatch = true;
-          state.recentComments = [...incomingChunk.slice(-12)];
-          incomingChunk = [];
-          io.to(roomId).emit('comments:updated', state);
-        }
-      });
-    } catch {}
+          // Send very first incoming message right away so user sees immediate live confirmation
+          if (!sentFirstImmediateBatch && incomingChunk.length >= 1) {
+            sentFirstImmediateBatch = true;
+            state.recentComments = [...incomingChunk.slice(-12)];
+            incomingChunk = [];
+            io.to(roomId).emit('comments:updated', state);
+          }
+        });
+
+        const scheduleReconnect = () => {
+          if (pingTimer) {
+            clearInterval(pingTimer);
+            pingTimer = null;
+          }
+          if (closed || reconnectTimer) return;
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectTwitchIrc();
+          }, 3500);
+        };
+
+        ws.addEventListener('close', scheduleReconnect);
+        ws.addEventListener('error', () => {
+          try {
+            ws.close();
+          } catch {}
+          scheduleReconnect();
+        });
+      } catch {}
+    };
+
+    connectTwitchIrc();
 
     // Every 3 seconds, flush the new chunk of unique filtered messages that arrived during that 3s window
     handle.interval = setInterval(() => {
@@ -425,8 +485,9 @@ export function startOrUpdateRoomCommentListener(
         const seenIds = new Set<string>();
         const apiKey = sourceInfo.apiKey;
         const clientVersion = sourceInfo.clientVersion || '2.20261112.10.00';
-        const initialTok = sourceInfo.liveContinuation;
+        let currentContinuation = sourceInfo.liveContinuation;
         let isFirstPoll = true;
+        let consecutiveFailures = 0;
 
         const pollLiveChatChunk = async () => {
           if (closed) return;
@@ -438,14 +499,35 @@ export function startOrUpdateRoomCommentListener(
                 headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
                 body: JSON.stringify({
                   context: { client: { clientName: 'WEB', clientVersion, hl: 'pt' } },
-                  continuation: initialTok,
+                  continuation: currentContinuation,
                 }),
               }
             );
-            if (!chatRes.ok || closed) return;
+            if (!chatRes.ok || closed) {
+              consecutiveFailures++;
+              if (consecutiveFailures >= 4 && !closed) {
+                const refreshed = await initYouTubeSource(resolvedVideoId);
+                if (refreshed.liveContinuation) {
+                  currentContinuation = refreshed.liveContinuation;
+                  consecutiveFailures = 0;
+                }
+              }
+              return;
+            }
+            consecutiveFailures = 0;
             const data = (await chatRes.json()) as any;
-            const actions: any[] =
-              data?.continuationContents?.liveChatContinuation?.actions || [];
+            const liveCont = data?.continuationContents?.liveChatContinuation;
+            const actions: any[] = liveCont?.actions || [];
+            const continuations: any[] = liveCont?.continuations || [];
+            const firstCont = continuations[0];
+            const nextToken =
+              firstCont?.invalidationContinuationData?.continuation ||
+              firstCont?.timedContinuationData?.continuation ||
+              firstCont?.liveChatReplayContinuationData?.continuation ||
+              firstCont?.reloadContinuationData?.continuation;
+            if (typeof nextToken === 'string' && nextToken.length > 0) {
+              currentContinuation = nextToken;
+            }
 
             const freshChunk: StreamCommentItem[] = [];
             for (const act of actions) {

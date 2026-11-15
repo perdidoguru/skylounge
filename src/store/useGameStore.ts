@@ -93,11 +93,15 @@ export const localPlayerTransform = {
   isRightMouseDown: false,
 };
 
-// Direct bridge to the active YT.Player instance for zero-stutter Host/Guest sync
+// Direct bridge to the active YT.Player / Twitch.Player instance for zero-stutter Host/Guest sync
 export const tvPlayerBridge = {
   getCurrentTime: (): number => 0,
   getDuration: (): number => 0,
   syncToServerNow: (): void => {},
+  seekToLive: (): void => {},
+  applyVolume: (_volume: number, _muted: boolean): void => {},
+  getPlayerType: (): 'youtube' | 'twitch' | 'kick' | 'ambient' => 'ambient',
+  lastLocalControl: { action: '' as string, at: 0 },
 };
 
 interface GameStore {
@@ -117,6 +121,7 @@ interface GameStore {
   players: Record<string, PlayerState>;
   seats: Record<string, string>; // seatId -> playerId
   tvState: TVMediaState;
+  tvLastSyncReceivedAt: number;
   commentListener: CommentListenerState;
   messages: ChatMessage[];
 
@@ -209,6 +214,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   players: {},
   seats: {},
   tvState: DEFAULT_TV_STATE,
+  tvLastSyncReceivedAt: Date.now(),
   commentListener: DEFAULT_COMMENT_LISTENER_STATE,
   messages: [],
 
@@ -288,6 +294,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         players: payload.players,
         seats: payload.seats,
         tvState: payload.tvState,
+        tvLastSyncReceivedAt: Date.now(),
         commentListener: payload.commentListener || DEFAULT_COMMENT_LISTENER_STATE,
         messages: payload.messages,
         mySeatId: me?.seatId || null,
@@ -440,7 +447,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     );
 
     socket.on('tv:updated', (tvState: TVMediaState) => {
-      set({ tvState, tvEmbedError: null });
+      set({ tvState, tvLastSyncReceivedAt: Date.now(), tvEmbedError: null });
     });
 
     socket.on('comments:updated', (commentListener: CommentListenerState) => {
@@ -449,6 +456,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     socket.on('tv:syncPulse', (pulse: TVSyncPulse) => {
       set((state) => ({
+        tvLastSyncReceivedAt: Date.now(),
         tvState: {
           ...state.tvState,
           playbackTime: pulse.playbackTime,
@@ -722,6 +730,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   sendTVControl: (action, playbackTime, allowGuestsControl, syncEnabled) => {
     const { socket } = get();
     if (!socket) return;
+    tvPlayerBridge.lastLocalControl = { action, at: Date.now() };
     socket.emit('tv:control', { action, playbackTime, allowGuestsControl, syncEnabled });
   },
 

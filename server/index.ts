@@ -95,7 +95,7 @@ function sanitizeText(input: unknown, maxLen = 180): string {
 }
 
 function sanitizeCustomization(raw: Partial<AvatarCustomization> | undefined): AvatarCustomization {
-  const validBodies = ['masculine', 'feminine'] as const;
+  const validBodies = ['masculine', 'masculine_heavy', 'feminine'] as const;
   const validOutfits = [
     'jacket',
     'hoodie',
@@ -153,8 +153,11 @@ function sanitizeCustomization(raw: Partial<AvatarCustomization> | undefined): A
 }
 
 function computeEffectiveTVState(tv: TVMediaState): TVMediaState {
-  const isYouTubeFamily = tv.platform === 'youtube' || tv.platform === 'youtube_live';
-  if (!tv.isPlaying || !tv.syncEnabled || !isYouTubeFamily || tv.playbackTime <= 0) {
+  const isTimeSynced =
+    tv.platform === 'youtube' ||
+    tv.platform === 'youtube_live' ||
+    (tv.platform === 'twitch' && Boolean(tv.videoId));
+  if (!tv.isPlaying || !tv.syncEnabled || !isTimeSynced || tv.playbackTime <= 0) {
     return tv;
   }
   const elapsedSeconds = Math.max(0, (Date.now() - tv.updatedAt) / 1000);

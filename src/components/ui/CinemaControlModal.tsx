@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Tv,
   Play,
@@ -55,6 +55,34 @@ export const CinemaControlModal: React.FC = () => {
   const canControl = isHost || tvState.allowGuestsControl;
   const isYouTubeFamily =
     tvState.platform === 'youtube' || tvState.platform === 'youtube_live';
+  const isTimeSeekable =
+    isYouTubeFamily || (tvState.platform === 'twitch' && Boolean(tvState.videoId));
+
+  const [playerClock, setPlayerClock] = useState<{ current: number; duration: number }>({
+    current: 0,
+    duration: 0,
+  });
+
+  useEffect(() => {
+    if (activeModal !== 'tv') return;
+    const refreshClock = () => {
+      const current = tvPlayerBridge.getCurrentTime() || tvState.playbackTime || 0;
+      const duration = tvPlayerBridge.getDuration() || 0;
+      setPlayerClock({ current, duration });
+    };
+    refreshClock();
+    const timer = window.setInterval(refreshClock, 500);
+    return () => clearInterval(timer);
+  }, [activeModal, tvState.playbackTime, tvState.url]);
+
+  const formatMediaTime = (sec: number) => {
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const rem = s % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(rem)}` : `${pad(m)}:${pad(rem)}`;
+  };
 
   const detectedPreview = useMemo(() => {
     if (!inputUrl.trim()) return null;
@@ -267,7 +295,7 @@ export const CinemaControlModal: React.FC = () => {
                   </button>
                 )}
 
-                {canControl && isYouTubeFamily && (
+                {canControl && isTimeSeekable && (
                   <>
                     <button
                       type="button"
@@ -300,11 +328,47 @@ export const CinemaControlModal: React.FC = () => {
                     )}
                   </>
                 )}
+
+                {tvState.isLive && tvState.platform !== 'ambient' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFX.playClick();
+                      tvPlayerBridge.seekToLive();
+                      triggerSyncFlash();
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/35 text-[10px] font-bold flex items-center gap-1 transition"
+                    title="Pular para a transmissão em tempo real (Live Edge)"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                    Ao Vivo
+                  </button>
+                )}
               </div>
             </div>
 
+            {/* Live DVR / Playback Timeline Readout */}
+            {tvState.platform !== 'ambient' && (playerClock.current > 0 || playerClock.duration > 0 || tvState.isLive) && (
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 bg-slate-950/45 px-2.5 py-1 rounded-lg border border-white/5">
+                <span>
+                  {tvState.isLive
+                    ? playerClock.duration > 0 && playerClock.duration - playerClock.current > 18
+                      ? `DVR (-${formatMediaTime(playerClock.duration - playerClock.current)} atrás do ao vivo)`
+                      : 'Em tempo real (Ao Vivo)'
+                    : 'Progresso'}
+                </span>
+                <span className="text-slate-200">
+                  {playerClock.duration > 0
+                    ? `${formatMediaTime(playerClock.current)} / ${formatMediaTime(playerClock.duration)}`
+                    : playerClock.current > 0
+                    ? formatMediaTime(playerClock.current)
+                    : 'LIVE'}
+                </span>
+              </div>
+            )}
+
             {/* Watch-Party Live Synchronization Bar */}
-            {isYouTubeFamily && (
+            {isTimeSeekable && (
               <div className="pt-2 border-t border-white/8 flex flex-wrap items-center justify-between gap-2">
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-200 cursor-pointer select-none">
                   <input
@@ -354,7 +418,11 @@ export const CinemaControlModal: React.FC = () => {
             <div className="px-3 py-2 rounded-xl bg-slate-900/55 border border-white/8 flex items-center gap-2.5">
               <button
                 type="button"
-                onClick={() => updateSettings({ tvMuted: !settings.tvMuted })}
+                onClick={() => {
+                  const nextMuted = !settings.tvMuted;
+                  updateSettings({ tvMuted: nextMuted });
+                  tvPlayerBridge.applyVolume(settings.tvVolume, nextMuted);
+                }}
                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 transition"
               >
                 {settings.tvMuted || settings.tvVolume === 0 ? (
@@ -373,12 +441,15 @@ export const CinemaControlModal: React.FC = () => {
                   min={0}
                   max={100}
                   value={settings.tvMuted ? 0 : settings.tvVolume}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const vol = Number(e.target.value);
+                    const muted = vol === 0;
                     updateSettings({
-                      tvVolume: Number(e.target.value),
-                      tvMuted: Number(e.target.value) === 0,
-                    })
-                  }
+                      tvVolume: vol,
+                      tvMuted: muted,
+                    });
+                    tvPlayerBridge.applyVolume(vol, muted);
+                  }}
                   className="w-full h-1.5 accent-amber-400 cursor-pointer"
                 />
               </div>
