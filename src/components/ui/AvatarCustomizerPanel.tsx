@@ -105,23 +105,7 @@ export const AvatarCustomizerPanel: React.FC<AvatarCustomizerPanelProps> = ({
 
   const handleSelectBodyStyle = (style: AvatarBodyStyle) => {
     soundFX.playClick();
-    if (style === 'feminine') {
-      const isCurrentlyMascHair = ['spiky'].includes(customization.hairStyle);
-      const isCurrentlyMascOutfit = ['jacket', 'vest'].includes(customization.outfitStyle);
-      onChange({
-        bodyStyle: 'feminine',
-        ...(isCurrentlyMascHair ? { hairStyle: 'long_waves' } : {}),
-        ...(isCurrentlyMascOutfit ? { outfitStyle: 'dress', primaryColor: '#ec4899' } : {}),
-      });
-    } else {
-      const isCurrentlyFemOutfit = ['dress', 'skirt_set', 'offshoulder', 'jumpsuit'].includes(
-        customization.outfitStyle
-      );
-      onChange({
-        bodyStyle: 'masculine',
-        ...(isCurrentlyFemOutfit ? { outfitStyle: 'jacket' } : {}),
-      });
-    }
+    onChange({ bodyStyle: style });
   };
 
   return (
@@ -141,16 +125,16 @@ export const AvatarCustomizerPanel: React.FC<AvatarCustomizerPanelProps> = ({
         />
       </div>
 
-      {/* Body Silhouette & Facial Expression Toggle (Feminino / Masculino) */}
+      {/* 3 Body Types Toggle (Feminino / Masculino Normal / Masculino Gordo) */}
       <div>
         <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
-          Estilo & Expressão do Avatar
+          Tipo de Corpo 3D
         </label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           <button
             type="button"
             onClick={() => handleSelectBodyStyle('feminine')}
-            className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+            className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1 ${
               currentBody === 'feminine'
                 ? 'bg-pink-500/20 border-pink-400 text-pink-200 shadow-sm'
                 : 'bg-slate-900/60 border-white/10 text-slate-300 hover:bg-slate-800/70'
@@ -161,13 +145,24 @@ export const AvatarCustomizerPanel: React.FC<AvatarCustomizerPanelProps> = ({
           <button
             type="button"
             onClick={() => handleSelectBodyStyle('masculine')}
-            className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+            className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1 ${
               currentBody === 'masculine'
                 ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-sm'
                 : 'bg-slate-900/60 border-white/10 text-slate-300 hover:bg-slate-800/70'
             }`}
           >
             <span>⚡ Masculino</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectBodyStyle('masculine_heavy')}
+            className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1 ${
+              currentBody === 'masculine_heavy'
+                ? 'bg-sky-500/20 border-sky-400 text-sky-200 shadow-sm'
+                : 'bg-slate-900/60 border-white/10 text-slate-300 hover:bg-slate-800/70'
+            }`}
+          >
+            <span>🧸 Masc. Gordo</span>
           </button>
         </div>
       </div>
@@ -255,7 +250,9 @@ export const AvatarCustomizerPanel: React.FC<AvatarCustomizerPanelProps> = ({
                 soundFX.playClick();
                 onChange({
                   outfitStyle: style.id,
-                  ...(style.tag === 'Fem' ? { bodyStyle: 'feminine' } : {}),
+                  ...(!customization.bodyStyle && style.tag === 'Fem'
+                    ? { bodyStyle: 'feminine' }
+                    : {}),
                 });
               }}
               className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition flex items-center justify-between ${

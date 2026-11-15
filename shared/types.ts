@@ -1,4 +1,4 @@
-export type AvatarBodyStyle = 'masculine' | 'feminine';
+export type AvatarBodyStyle = 'masculine' | 'masculine_heavy' | 'feminine';
 
 export type AvatarOutfitStyle =
   | 'jacket'

@@ -404,13 +404,13 @@ export const PlayerController: React.FC = () => {
         keysPressed.current['Space'] &&
         isGrounded.current
       ) {
-        velocityY.current = 5.6;
+        velocityY.current = 2.6;
         isGrounded.current = false;
         if (activeEmote) clearActiveEmote();
       }
 
       if (!isGrounded.current || py > floorY + 0.05) {
-        velocityY.current -= 15.5 * dt; // Gravity
+        velocityY.current -= 9.5 * dt; // Gravity paired with the visual GLB jump clip
         py += velocityY.current * dt;
         if (py <= floorY) {
           py = floorY;

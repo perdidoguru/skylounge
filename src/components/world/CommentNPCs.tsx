@@ -94,7 +94,7 @@ const NPC_PRESETS: NPCPreset[] = [
     preferredSeats: ['sofa-wing-r1', 'sofa-vip-2', 'sofa-main-3', 'bar-stool-3'],
     customization: {
       name: 'Zion',
-      bodyStyle: 'masculine',
+      bodyStyle: 'masculine_heavy',
       skinColor: '#8d5535',
       outfitStyle: 'blazer',
       primaryColor: '#fb7185',
