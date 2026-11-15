@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, HelpCircle, X, Monitor, MousePointer, Volume2 } from 'lucide-react';
+import { Settings, HelpCircle, X, Monitor, MousePointer, Volume2, Sparkles } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { GraphicsQuality } from '../../../shared/types';
 
@@ -133,6 +133,30 @@ export const SettingsModal: React.FC = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Optional Realistic Shader (Subsurface Scattering + Anisotropic Hair + IBL) */}
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-900/65 border border-white/10">
+            <div className="pr-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-white">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                Shader Realista (SSS + IBL)
+              </p>
+              <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                Subsurface scattering na pele, brilho anisotrópico nos cabelos, sheen de tecido e reflexos PBR
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => updateSettings({ realisticShader: !settings.realisticShader })}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition shrink-0 ${
+                settings.realisticShader
+                  ? 'bg-amber-500/20 border border-amber-400/40 text-amber-300 shadow-sm'
+                  : 'bg-slate-800 border border-white/10 text-slate-400'
+              }`}
+            >
+              {settings.realisticShader ? 'Ativo' : 'Padrão'}
+            </button>
           </div>
 
           {/* Camera Mouse Sensitivity */}

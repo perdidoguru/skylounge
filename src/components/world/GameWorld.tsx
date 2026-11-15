@@ -9,9 +9,11 @@ import { SeatingSystem } from './SeatingSystem';
 import { PlayerController } from '../controllers/PlayerController';
 import { RemotePlayers } from './RemotePlayers';
 import { CommentNPCs } from './CommentNPCs';
+import { RealisticEnvironment } from './RealisticEnvironment';
 
 export const GameWorld: React.FC = () => {
   const quality = useGameStore((s) => s.settings.graphicsQuality);
+  const realisticShader = useGameStore((s) => s.settings.realisticShader);
 
   const dpr: [number, number] =
     quality === 'low' ? [0.85, 1] : quality === 'medium' ? [1, 1.5] : [1, 2];
@@ -48,19 +50,22 @@ export const GameWorld: React.FC = () => {
           {/* Atmospheric Twilight Fog */}
           <fog attach="fog" args={['#0d1024', 55, 340]} />
 
+          {/* Procedural Penthouse HDRI-like PMREM Environment Cubemap (when Realistic Shader is enabled) */}
+          <RealisticEnvironment enabled={realisticShader} />
+
           {/* Warm Interior & Twilight Exterior Lighting */}
-          <ambientLight intensity={0.62} color="#d8dff8" />
+          <ambientLight intensity={realisticShader ? 0.45 : 0.62} color="#d8dff8" />
           <hemisphereLight
             color="#ffcf96"
             groundColor="#1a1d36"
-            intensity={0.68}
+            intensity={realisticShader ? 0.55 : 0.68}
           />
 
           {/* Primary Warm Penthouse Architectural Directional Light */}
           <directionalLight
             castShadow={quality !== 'low'}
             position={[8, 16, 10]}
-            intensity={1.35}
+            intensity={realisticShader ? 1.55 : 1.35}
             color="#ffdcb0"
             shadow-mapSize-width={quality === 'high' ? 2048 : 1024}
             shadow-mapSize-height={quality === 'high' ? 2048 : 1024}

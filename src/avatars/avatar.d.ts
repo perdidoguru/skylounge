@@ -15,6 +15,7 @@ export interface AvatarAppearanceOptions {
   primaryColor?: string;
   secondaryColor?: string;
   hairColor?: string;
+  realisticShader?: boolean;
 }
 
 export interface PreparedAvatarController {

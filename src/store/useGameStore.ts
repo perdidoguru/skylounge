@@ -41,6 +41,7 @@ function loadInitialCustomization(): AvatarCustomization {
 
 interface SettingsState {
   graphicsQuality: GraphicsQuality;
+  realisticShader: boolean;
   mouseSensitivity: number;
   tvVolume: number;
   tvMuted: boolean;
@@ -53,6 +54,7 @@ function loadInitialSettings(): SettingsState {
     if (raw) {
       return {
         graphicsQuality: 'high',
+        realisticShader: true,
         mouseSensitivity: 1.0,
         tvVolume: 65,
         tvMuted: false,
@@ -63,6 +65,7 @@ function loadInitialSettings(): SettingsState {
   } catch {}
   return {
     graphicsQuality: 'high',
+    realisticShader: true,
     mouseSensitivity: 1.0,
     tvVolume: 65,
     tvMuted: false,

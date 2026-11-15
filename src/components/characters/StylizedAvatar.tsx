@@ -10,7 +10,7 @@ import {
   SeatPosture,
 } from '../../../shared/types';
 import { SEAT_MAP } from '../../../shared/seats';
-import { localPlayerTransform } from '../../store/useGameStore';
+import { localPlayerTransform, useGameStore } from '../../store/useGameStore';
 import { prepareAvatar } from '../../avatars/avatar.mjs';
 
 interface StylizedAvatarProps {
@@ -107,6 +107,8 @@ const StylizedAvatarModel: React.FC<StylizedAvatarProps> = ({
     return () => clearTimeout(timer);
   }, [lastMessage]);
 
+  const realisticShader = useGameStore((s) => s.settings.realisticShader);
+
   const effectiveBodyStyle: AvatarBodyStyle =
     customization.bodyStyle ||
     (['dress', 'skirt_set', 'offshoulder', 'jumpsuit'].includes(customization.outfitStyle)
@@ -126,6 +128,7 @@ const StylizedAvatarModel: React.FC<StylizedAvatarProps> = ({
       primaryColor: customization.primaryColor,
       secondaryColor: customization.secondaryColor,
       hairColor: customization.hairColor,
+      realisticShader,
     }),
     [
       effectiveBodyStyle,
@@ -136,6 +139,7 @@ const StylizedAvatarModel: React.FC<StylizedAvatarProps> = ({
       customization.primaryColor,
       customization.secondaryColor,
       customization.hairColor,
+      realisticShader,
     ]
   );
 

@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { Sparkles, Users, PlusCircle, LogIn, Tv, Radio, ShieldCheck } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
+import { RealisticEnvironment } from '../world/RealisticEnvironment';
 import { AvatarCustomizerPanel } from './AvatarCustomizerPanel';
 import { AnimationState } from '../../../shared/types';
 import { soundFX } from '../../utils/soundEffects';
@@ -10,6 +11,8 @@ import { soundFX } from '../../utils/soundEffects';
 export const LobbyScreen: React.FC = () => {
   const customization = useGameStore((s) => s.customization);
   const updateCustomization = useGameStore((s) => s.updateCustomization);
+  const realisticShader = useGameStore((s) => s.settings.realisticShader);
+  const updateSettings = useGameStore((s) => s.updateSettings);
   const publicRooms = useGameStore((s) => s.publicRooms);
   const connected = useGameStore((s) => s.connected);
   const joinRoom = useGameStore((s) => s.joinRoom);
@@ -101,19 +104,33 @@ export const LobbyScreen: React.FC = () => {
         <div className="lg:col-span-7 rounded-3xl bg-slate-950/75 border border-white/12 backdrop-blur-xl shadow-2xl p-5 md:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
           {/* 3D Interactive Avatar Stage */}
           <div className="md:col-span-5 flex flex-col justify-between rounded-2xl bg-gradient-to-b from-slate-900/90 via-slate-900/50 to-amber-950/20 border border-white/10 overflow-hidden relative min-h-[300px]">
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10 pointer-events-none">
-              <span className="px-2.5 py-1 rounded-full bg-slate-950/75 border border-white/10 text-[11px] font-semibold text-amber-300">
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+              <span className="px-2.5 py-1 rounded-full bg-slate-950/75 border border-white/10 text-[11px] font-semibold text-amber-300 pointer-events-none">
                 Preview 3D
               </span>
-              <span className="text-[11px] text-slate-400 font-medium">
-                {customization.name}
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFX.playClick();
+                  updateSettings({ realisticShader: !realisticShader });
+                }}
+                title="Alternar Shader Realista (Subsurface Scattering + Anisotropia + IBL)"
+                className={`px-2.5 py-1 rounded-full border text-[10px] font-bold transition flex items-center gap-1 ${
+                  realisticShader
+                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 shadow-sm'
+                    : 'bg-slate-950/75 border-white/10 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                {realisticShader ? 'Shader Realista: ON' : 'Shader: Padrão'}
+              </button>
             </div>
 
             <div className="w-full h-[290px] md:h-full">
               <Canvas camera={{ position: [0, 0.08, 2.75], fov: 44 }}>
-                <ambientLight intensity={0.85} />
-                <directionalLight position={[3, 5, 4]} intensity={1.4} color="#ffe3b8" />
+                <RealisticEnvironment enabled={realisticShader} />
+                <ambientLight intensity={realisticShader ? 0.55 : 0.85} />
+                <directionalLight position={[3, 5, 4]} intensity={realisticShader ? 1.65 : 1.4} color="#ffe3b8" />
                 <pointLight position={[-2, 2, -2]} intensity={0.8} color="#8b5cf6" />
                 <group position={[0, -0.82, 0]}>
                   <StylizedAvatar

@@ -39,7 +39,7 @@ O GLB é uma biblioteca. Um visualizador genérico pode desenhar todas as altern
 
 Use `null` para retirar roupas, cabelo ou acessórios. O campo `accessory` também aceita uma lista. Cada conjunto `Outfit_<estilo>` contém três ajustes `Wear_<estilo>_<corpo>`. Ative só o ajuste correspondente a `Body_<corpo>`. O seletor cuida disso. A aparência inicial usa corpo masculino, moletom e topete.
 
-Os materiais compartilhados por peças de uma pessoa são clonados por instância. `Mat_Skin`, `Mat_Primary`, `Mat_Secondary` e `Mat_Hair` recebem as quatro cores. Os demais são `Mat_AccentGold`, `Mat_White`, `Mat_Dark` e `Mat_Blush`. As cores iniciais estão no PBR. Para aplicar uma estampa repetida, atribua uma textura sRGB ao `map` do material do clone, defina `texture.flipY = false`, configure repetição conforme desejado e marque `material.needsUpdate = true`. As UVs são projeções locais para padrões repetidos. Uma ilustração contínua entre painéis requer UVs próprias.
+Os materiais compartilhados por peças de uma pessoa são clonados por instância. `Mat_Skin`, `Mat_Primary`, `Mat_Secondary` e `Mat_Hair` recebem as quatro cores. Os demais são `Mat_AccentGold`, `Mat_White`, `Mat_Dark` e `Mat_Blush`. O material de cabelo usa uma textura de mechas de 256 × 256 incorporada ao GLB. A cor continua configurável por instância. Para aplicar uma estampa repetida, atribua uma textura sRGB ao `map` do material do clone, defina `texture.flipY = false`, configure repetição conforme desejado e marque `material.needsUpdate = true`. As UVs são projeções locais para padrões repetidos. Uma ilustração contínua entre painéis requer UVs próprias.
 
 ## Animação e posicionamento
 
@@ -59,6 +59,6 @@ Os encaixes são filhos diretos de `Head`: `Socket_Hair`, `Socket_Glasses`, `Soc
 
 ## Verificação da entrega
 
-Importação e clonagem testadas com Three.js r169. O teste percorreu as 24 combinações de corpo e roupa, verificou a independência das cores entre clones, acionou os morphs, leu os seis sockets e amostrou os 16 clipes. O corpo base tem 6.016 triângulos. Como referência, corpo masculino, rosto, moletom e topete somam 17.038 triângulos visíveis. O custo muda com a seleção.
+Importação e clonagem testadas com Three.js r169. O teste percorreu as 24 combinações de corpo e roupa, verificou a independência das cores entre clones, acionou os morphs, leu os seis sockets e amostrou os 16 clipes. O corpo base tem 6.016 triângulos. Como referência, corpo masculino, rosto, moletom e topete somam 21.776 triângulos visíveis. O custo muda com a seleção.
 
 O validador Khronos encontrou zero erros. Os 28 avisos de hierarquia se referem às malhas com skin agrupadas sob nós. Use esses grupos para visibilidade e transforme o avatar completo para posicioná-lo. A prova de integração foi feita fora do cenário do jogo.
