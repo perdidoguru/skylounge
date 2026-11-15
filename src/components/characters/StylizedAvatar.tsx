@@ -225,415 +225,573 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       return;
     }
 
+    // =========================================================================
+    // EASE-IN / EASE-OUT CURVE HELPERS FOR LOOSE, FLUID CHARACTER ANIMATION
+    // =========================================================================
+    const easeInOutCubic = (x: number): number =>
+      x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+    const easeInOutQuart = (x: number): number =>
+      x < 0.5 ? 8 * x * x * x * x : 1 - Math.pow(-2 * x + 2, 4) / 2;
+
+    // Periodic wave in [-1, 1] with true Ease-In and Ease-Out at both turnarounds
+    const easedOsc = (phase: number, mode: 'cubic' | 'quart' = 'cubic'): number => {
+      const u = (((phase / Math.PI) % 2) + 2) % 2; // [0, 2)
+      const easeFn = mode === 'quart' ? easeInOutQuart : easeInOutCubic;
+      return u < 1 ? easeFn(u) * 2 - 1 : 1 - easeFn(u - 1) * 2;
+    };
+
+    // Asymmetric gravity bounce in [0, 1]: fast Ease-Out upward arc + cushioned Ease-In-Out landing
+    const easedBounce = (phase: number): number => {
+      const u = (((phase / (Math.PI * 2)) % 1) + 1) % 1; // [0, 1)
+      if (u < 0.46) {
+        const up = u / 0.46;
+        return 1 - Math.pow(1 - up, 2.4); // Ease-Out up to apex
+      }
+      const down = (u - 0.46) / 0.54;
+      return 1 - easeInOutCubic(down); // Cushioned Ease-In-Out down into knees
+    };
+
     // Target pose variables
-    let hipsY = 0.72;
+    // NOTE ON LIMB Z-ROTATION IN THREE.JS:
+    // Because arms & legs hang down (-Y):
+    // - Left limbs (at -X) flare OUTWARD away from body when rotation.z is NEGATIVE (< 0).
+    // - Right limbs (at +X) flare OUTWARD away from body when rotation.z is POSITIVE (> 0).
+    let hipsX = 0;
+    let hipsY = 0.715;
     let hipsZ = 0;
     let hipsRotX = 0;
     let hipsRotY = 0;
+    let hipsRotZ = 0;
     let spineRotX = 0;
+    let spineRotY = 0;
     let spineRotZ = 0;
     let headRotY = headYaw;
     let headRotX = headPitch;
     let headRotZ = 0;
 
     let lArmX = 0;
-    let lArmZ = isFeminine ? 0.09 : 0.12;
-    let lForeX = -0.15;
-    let lForeZ = 0;
+    let lArmZ = isFeminine ? -0.24 : -0.27;
+    let lForeX = -0.28;
+    let lForeZ = -0.09;
 
     let rArmX = 0;
-    let rArmZ = isFeminine ? -0.09 : -0.12;
-    let rForeX = -0.15;
-    let rForeZ = 0;
+    let rArmZ = isFeminine ? 0.24 : 0.27;
+    let rForeX = -0.28;
+    let rForeZ = 0.09;
 
-    let lLegX = 0;
-    let lLegY = 0;
-    let lLegZ = 0;
-    let lShinX = 0;
+    let lLegX = -0.06;
+    let lLegY = -0.08;
+    let lLegZ = -0.065;
+    let lShinX = 0.11;
 
-    let rLegX = 0;
-    let rLegY = 0;
-    let rLegZ = 0;
-    let rShinX = 0;
+    let rLegX = -0.06;
+    let rLegY = 0.08;
+    let rLegZ = 0.065;
+    let rShinX = 0.11;
 
-    const dampSpeed = 14;
     const activeAnim: AnimationState = isLocal ? localPlayerTransform.animation : animation;
     const activeHeadYaw = isLocal ? localPlayerTransform.headYaw : headYaw;
     const activeHeadPitch = isLocal ? localPlayerTransform.headPitch : headPitch;
     headRotY = activeHeadYaw;
     headRotX = activeHeadPitch;
 
-    // Cute subtle talking bounce & head tilt when chat bubble is active
+    // Cute eased talking bounce & head tilt when chat bubble is active
     const isTalking = Boolean(activeBubbleText);
-    const talkBounce = isTalking ? Math.abs(Math.sin(t * 9.5)) * 0.018 : 0;
-    const talkHeadTilt = isTalking ? Math.sin(t * 7.5) * 0.065 : 0;
+    const talkBounce = isTalking ? easedBounce(t * 7.5) * 0.024 : 0;
+    const talkHeadTilt = isTalking ? easedOsc(t * 5.2, 'cubic') * 0.075 : 0;
 
     switch (activeAnim) {
       case 'idle': {
-        // Cute bouncy chibi idle: cheerful breathing bob, gentle head tilt, slightly flared relaxed arms
-        const breath = Math.sin(t * 2.6);
-        const sway = Math.sin(t * 1.3);
-        hipsY = 0.72 + Math.abs(breath) * 0.018 + talkBounce;
-        spineRotX = breath * 0.028;
-        spineRotZ = sway * (isFeminine ? 0.038 : 0.028);
-        hipsRotY = sway * (isFeminine ? 0.055 : 0.03);
-        lArmX = Math.sin(t * 1.8) * 0.06;
-        rArmX = -Math.sin(t * 1.8) * 0.06;
-        lArmZ = (isFeminine ? 0.16 : 0.18) + Math.abs(breath) * 0.025;
-        rArmZ = -(isFeminine ? 0.16 : 0.18) - Math.abs(breath) * 0.025;
-        lForeX = -0.18;
-        rForeX = -0.18;
-        headRotY = activeHeadYaw + Math.sin(t * 0.9) * 0.06;
-        headRotX = activeHeadPitch + Math.cos(t * 1.5) * 0.035;
-        headRotZ = sway * 0.055 + talkHeadTilt;
+        // LOOSE, RELAXED CHIBI IDLE:
+        // Slow Ease-In-Out weight shift between left & right foot + overlapping follow-through
+        // down the kinematic chain (Hips lead -> Spine lags -> Shoulders lag -> Forearms whip -> Head settles)
+        const breath = easedBounce(t * 2.1);
+        const swayHips = easedOsc(t * 1.05, 'cubic');
+        const swaySpine = easedOsc(t * 1.05 - 0.48, 'cubic'); // Spine lags behind hips
+        const swayHead = easedOsc(t * 1.05 - 0.92, 'cubic'); // Head lags behind spine
+        const armSwing = easedOsc(t * 1.05 - 0.65, 'cubic'); // Upper arms lag as loose pendulums
+        const foreSwing = easedOsc(t * 1.05 - 1.25, 'cubic'); // Forearms/hands lag behind upper arms
+
+        hipsX = swayHips * 0.034;
+        hipsY = 0.712 + breath * 0.022 - Math.abs(swayHips) * 0.008 + talkBounce;
+        hipsRotZ = -swayHips * 0.042;
+        hipsRotY = swayHips * (isFeminine ? 0.075 : 0.055);
+
+        spineRotX = -0.02 + (breath - 0.5) * 0.045;
+        spineRotZ = swaySpine * (isFeminine ? 0.058 : 0.045);
+        spineRotY = -swaySpine * 0.04;
+
+        // Open, relaxed arms hanging loosely away from the torso (never glued to waist!)
+        const baseOutwardArm = isFeminine ? 0.25 : 0.28;
+        lArmX = 0.04 + armSwing * 0.085;
+        rArmX = 0.04 - armSwing * 0.085;
+        lArmZ = -(baseOutwardArm + breath * 0.045 + Math.max(0, -swaySpine) * 0.04);
+        rArmZ = baseOutwardArm + breath * 0.045 + Math.max(0, swaySpine) * 0.04;
+
+        // Loose elbows & wrists with secondary follow-through
+        lForeX = -0.28 + foreSwing * 0.07 - breath * 0.04;
+        rForeX = -0.28 - foreSwing * 0.07 - breath * 0.04;
+        lForeZ = -0.09 - Math.max(0, -foreSwing) * 0.05;
+        rForeZ = 0.09 + Math.max(0, foreSwing) * 0.05;
+
+        // Relaxed A-stance legs with alternating soft knee bend as weight shifts left/right
+        const leftWeight = Math.max(0, -swayHips); // 0..1 when leaning right, left knee bends loosely
+        const rightWeight = Math.max(0, swayHips);
+        lLegX = -0.06 - leftWeight * 0.07;
+        rLegX = -0.06 - rightWeight * 0.07;
+        lLegZ = -0.068 - swayHips * 0.025;
+        rLegZ = 0.068 - swayHips * 0.025;
+        lLegY = -0.09;
+        rLegY = 0.09;
+        lShinX = 0.11 + leftWeight * 0.14;
+        rShinX = 0.11 + rightWeight * 0.14;
+
+        headRotY = activeHeadYaw + easedOsc(t * 0.68, 'quart') * 0.075;
+        headRotX = activeHeadPitch + (breath - 0.5) * 0.045;
+        headRotZ = swayHead * 0.072 + talkHeadTilt;
         break;
       }
 
       case 'walk': {
-        // Cute bouncy chibi waddle-walk: happy vertical bounce, playful side-to-side head & torso sway, flared arms
-        const w = t * 9.2;
-        hipsY = 0.72 + Math.abs(Math.cos(w)) * 0.058 + talkBounce;
-        hipsRotY = Math.sin(w) * (isFeminine ? 0.14 : 0.1);
-        spineRotX = 0.04;
-        spineRotZ = Math.sin(w) * 0.065;
+        // LOOSE, BOUNCY CHIBI WALK WITH EASE-IN / EASE-OUT & FOLLOW-THROUGH
+        const w = t * 7.8;
+        const stride = easedOsc(w, 'cubic');
+        const strideDelayed = easedOsc(w - 0.58, 'cubic'); // Forearms & head lag behind stride
+        const stepBounce = easedBounce(w * 2); // Smooth ease-out up, ease-in-out cushioned landing
 
-        lLegX = Math.sin(w) * 0.58;
-        rLegX = -Math.sin(w) * 0.58;
-        lShinX = Math.max(0, -Math.cos(w) * 0.62);
-        rShinX = Math.max(0, Math.cos(w) * 0.62);
+        hipsX = stride * 0.038;
+        hipsY = 0.705 + stepBounce * 0.064 + talkBounce;
+        hipsRotY = stride * (isFeminine ? 0.16 : 0.12);
+        hipsRotZ = -stride * 0.05;
 
-        lArmX = -Math.sin(w) * 0.48;
-        rArmX = Math.sin(w) * 0.48;
-        lArmZ = 0.22 + Math.abs(Math.cos(w)) * 0.05;
-        rArmZ = -0.22 - Math.abs(Math.cos(w)) * 0.05;
-        lForeX = -0.34 - Math.max(0, -Math.sin(w)) * 0.25;
-        rForeX = -0.34 - Math.max(0, Math.sin(w)) * 0.25;
-        headRotZ = -Math.sin(w) * 0.075 + talkHeadTilt;
-        headRotX = activeHeadPitch + Math.abs(Math.cos(w)) * 0.04;
+        spineRotX = 0.045 + (1 - stepBounce) * 0.035;
+        spineRotZ = strideDelayed * 0.075;
+        spineRotY = -stride * 0.09;
+
+        // Legs swing with eased turnarounds and cushioned knee bend on pass-through
+        lLegX = stride * 0.56;
+        rLegX = -stride * 0.56;
+        lLegZ = -0.065;
+        rLegZ = 0.065;
+        lLegY = -0.06;
+        rLegY = 0.06;
+        lShinX = 0.08 + Math.max(0, -Math.cos(w - 0.25)) * 0.64;
+        rShinX = 0.08 + Math.max(0, Math.cos(w - 0.25)) * 0.64;
+
+        // Wide, loose pendulum arm swing (flared outward so hands never touch hips)
+        lArmX = -stride * 0.48;
+        rArmX = stride * 0.48;
+        lArmZ = -0.28 - stepBounce * 0.06;
+        rArmZ = 0.28 + stepBounce * 0.06;
+
+        // Phase-delayed forearm whip for loose follow-through
+        lForeX = -0.36 - Math.max(0, -strideDelayed) * 0.32;
+        rForeX = -0.36 - Math.max(0, strideDelayed) * 0.32;
+        lForeZ = -0.1;
+        rForeZ = 0.1;
+
+        headRotZ = -strideDelayed * 0.085 + talkHeadTilt;
+        headRotX = activeHeadPitch + (stepBounce - 0.5) * 0.055;
+        headRotY = activeHeadYaw + strideDelayed * 0.05;
         break;
       }
 
       case 'run': {
-        // Cute energetic chibi dash with bouncy arms and lively head bob
-        const r = t * 14.0;
-        hipsY = 0.71 + Math.abs(Math.cos(r)) * 0.088 + talkBounce;
-        hipsRotY = Math.sin(r) * 0.16;
-        spineRotX = 0.16;
-        spineRotZ = Math.sin(r) * 0.085;
+        // ENERGETIC, LOOSE CHIBI DASH WITH EASE-OUT AERIAL FLOAT & FOREARM WHIP
+        const r = t * 12.2;
+        const stride = easedOsc(r, 'cubic');
+        const strideDelayed = easedOsc(r - 0.52, 'cubic');
+        const dashBounce = easedBounce(r * 2);
 
-        lLegX = Math.sin(r) * 0.94;
-        rLegX = -Math.sin(r) * 0.94;
-        lShinX = Math.max(0.12, -Math.cos(r) * 0.98);
-        rShinX = Math.max(0.12, Math.cos(r) * 0.98);
+        hipsX = stride * 0.042;
+        hipsY = 0.695 + dashBounce * 0.095 + talkBounce;
+        hipsRotY = stride * 0.18;
+        hipsRotZ = -stride * 0.06;
 
-        lArmX = -Math.sin(r) * 0.85;
-        rArmX = Math.sin(r) * 0.85;
-        lArmZ = 0.28;
-        rArmZ = -0.28;
-        lForeX = -0.92;
-        rForeX = -0.92;
-        headRotX = activeHeadPitch - 0.08 + Math.abs(Math.cos(r)) * 0.05;
-        headRotZ = -Math.sin(r) * 0.08;
+        spineRotX = 0.15 + (1 - dashBounce) * 0.05;
+        spineRotZ = strideDelayed * 0.095;
+        spineRotY = -stride * 0.12;
+
+        lLegX = stride * 0.92;
+        rLegX = -stride * 0.92;
+        lLegZ = -0.075;
+        rLegZ = 0.075;
+        lShinX = 0.14 + Math.max(0, -Math.cos(r - 0.2)) * 0.96;
+        rShinX = 0.14 + Math.max(0, Math.cos(r - 0.2)) * 0.96;
+
+        lArmX = -stride * 0.86;
+        rArmX = stride * 0.86;
+        lArmZ = -0.34 - dashBounce * 0.06;
+        rArmZ = 0.34 + dashBounce * 0.06;
+        lForeX = -0.88 - Math.max(0, -strideDelayed) * 0.28;
+        rForeX = -0.88 - Math.max(0, strideDelayed) * 0.28;
+        lForeZ = -0.12;
+        rForeZ = 0.12;
+
+        headRotX = activeHeadPitch - 0.08 + (dashBounce - 0.5) * 0.07;
+        headRotZ = -strideDelayed * 0.095;
         break;
       }
 
       case 'jump': {
-        // Cute joyful star-hop with raised arms and tucked legs
-        hipsY = 0.84;
-        spineRotX = -0.1;
-        lLegX = -0.42;
-        lShinX = 0.75;
-        rLegX = 0.24;
-        rShinX = 0.52;
+        // OPEN, JOYFUL STAR-HOP (Arms flared WIDE outward, legs loosely tucked)
+        hipsY = 0.85;
+        spineRotX = -0.12;
+        lLegX = -0.45;
+        lShinX = 0.78;
+        lLegZ = -0.14;
+        rLegX = 0.22;
+        rShinX = 0.55;
+        rLegZ = 0.14;
         lArmX = -0.95;
         rArmX = -0.95;
-        lArmZ = 0.48;
-        rArmZ = -0.48;
-        lForeX = -0.35;
-        rForeX = -0.35;
-        headRotX = activeHeadPitch - 0.12;
+        lArmZ = -0.58; // Wide outward left arm!
+        rArmZ = 0.58; // Wide outward right arm!
+        lForeX = -0.38;
+        rForeX = -0.38;
+        headRotX = activeHeadPitch - 0.14;
         break;
       }
 
       case 'sit': {
-        const breath = Math.sin(t * 2.2);
-        const kick = Math.sin(t * 2.7);
-        const sway = Math.sin(t * 1.4);
+        // LOOSE, COZY SEATED ANIMATIONS WITH EASE-IN / EASE-OUT SWAY & DELAYED FOLLOW-THROUGH
+        const breath = easedBounce(t * 1.9);
+        const kickL = easedOsc(t * 2.1, 'cubic');
+        const kickR = easedOsc(t * 2.1 - 2.4, 'cubic'); // Offset phase so feet don't move like a stiff metronome
+        const swaySpine = easedOsc(t * 1.15, 'cubic');
+        const swayHead = easedOsc(t * 1.15 - 0.55, 'cubic'); // Head lags behind spine sway
         const posture: SeatPosture = (seatId && SEAT_MAP[seatId]?.posture) || 'sofa';
 
         if (posture === 'sofa') {
-          // 1. SOFA: Cute cozy cinema lean with gentle alternating foot kicks and happy head sway
-          hipsY = 0.11 + talkBounce * 0.6;
+          // 1. SOFA: Open, relaxed cinema lounge, elbows resting wide, loose alternating foot swings
+          hipsY = 0.11 + talkBounce * 0.65;
           hipsZ = -0.05;
-          spineRotX = -0.1 + breath * 0.018;
-          spineRotZ = sway * 0.032;
+          spineRotX = -0.11 + (breath - 0.5) * 0.03;
+          spineRotZ = swaySpine * 0.042;
           lLegX = -1.42;
-          lShinX = 1.32 + kick * 0.09;
+          lShinX = 1.3 + kickL * 0.12;
           rLegX = -1.42;
-          rShinX = 1.32 - kick * 0.09;
-          lLegZ = isFeminine ? -0.04 : 0.06;
-          rLegZ = isFeminine ? 0.04 : -0.06;
+          rShinX = 1.3 + kickR * 0.12;
+          lLegZ = isFeminine ? -0.05 : -0.12;
+          rLegZ = isFeminine ? 0.05 : 0.12;
 
-          lArmX = -0.34;
-          lArmZ = 0.12;
-          lForeX = -0.52;
-          lForeZ = -0.22;
+          lArmX = -0.32;
+          lArmZ = -0.26; // Open outward elbow
+          lForeX = -0.48 + kickL * 0.04;
+          lForeZ = 0.12;
 
-          rArmX = -0.34;
-          rArmZ = -0.12;
-          rForeX = -0.52;
-          rForeZ = 0.22;
-          headRotY = activeHeadYaw + Math.sin(t * 0.7) * 0.045;
-          headRotX = activeHeadPitch + Math.sin(t * 1.4) * 0.03;
-          headRotZ = sway * 0.055 + talkHeadTilt;
+          rArmX = -0.32;
+          rArmZ = 0.26; // Open outward elbow
+          rForeX = -0.48 + kickR * 0.04;
+          rForeZ = -0.12;
+
+          headRotY = activeHeadYaw + easedOsc(t * 0.65, 'quart') * 0.06;
+          headRotX = activeHeadPitch + (breath - 0.5) * 0.035;
+          headRotZ = swayHead * 0.068 + talkHeadTilt;
         } else if (posture === 'chaise') {
-          // 2. CHAISE LONGUE: Relaxed sunbed lounge with cute ankle wiggle and cozy head tilt
-          hipsY = 0.11 + talkBounce * 0.6;
+          // 2. CHAISE LONGUE: Deep sunbed recline with open arms and eased ankle rock
+          hipsY = 0.11 + talkBounce * 0.65;
           hipsZ = -0.09;
-          spineRotX = -0.22 + breath * 0.016;
-          spineRotZ = sway * 0.025;
+          spineRotX = -0.22 + (breath - 0.5) * 0.028;
+          spineRotZ = swaySpine * 0.035;
           lLegX = -1.26;
-          lShinX = 0.35 + kick * 0.06;
-          lLegZ = -0.06;
+          lShinX = 0.35 + kickL * 0.075;
+          lLegZ = -0.09;
           rLegX = -1.32;
-          rShinX = 0.42 - kick * 0.06;
+          rShinX = 0.42 + kickR * 0.075;
           rLegZ = 0.12;
 
           lArmX = -0.18;
-          lArmZ = 0.32;
+          lArmZ = -0.36;
           lForeX = -0.42;
-          rArmX = -0.32;
-          rArmZ = -0.12;
-          rForeX = -0.52;
-          headRotZ = 0.05 + sway * 0.04 + talkHeadTilt;
-          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.04;
-        } else if (posture === 'pouf') {
-          // 3. VELVET POUF: Cute attentive cinema watch pose, hands on knees, happy foot dangle & head bob
-          hipsY = 0.11 + Math.abs(breath) * 0.01 + talkBounce * 0.7;
-          hipsZ = 0.0;
-          spineRotX = 0.07 + breath * 0.02;
-          spineRotZ = sway * 0.04;
-          lLegX = -1.38;
-          lShinX = 1.36 + kick * 0.11;
-          rLegX = -1.38;
-          rShinX = 1.36 - kick * 0.11;
-          lLegZ = 0.08;
-          rLegZ = -0.08;
-
-          lArmX = -0.38;
-          rArmX = -0.38;
-          lArmZ = 0.12;
-          rArmZ = -0.12;
-          lForeX = -0.48;
+          rArmX = -0.28;
+          rArmZ = 0.32;
           rForeX = -0.48;
-          lForeZ = -0.14;
-          rForeZ = 0.14;
-          headRotX = activeHeadPitch - 0.05 + Math.sin(t * 1.6) * 0.035;
-          headRotZ = sway * 0.06 + talkHeadTilt;
+          headRotZ = 0.04 + swayHead * 0.055 + talkHeadTilt;
+          headRotY = activeHeadYaw + easedOsc(t * 0.55, 'quart') * 0.055;
+        } else if (posture === 'pouf') {
+          // 3. VELVET POUF: Loose, excited cinema watch pose on pouf with bouncy feet & open elbows
+          hipsY = 0.11 + breath * 0.014 + talkBounce * 0.75;
+          hipsZ = 0.0;
+          spineRotX = 0.06 + (breath - 0.5) * 0.035;
+          spineRotZ = swaySpine * 0.052;
+          lLegX = -1.38;
+          lShinX = 1.34 + kickL * 0.14;
+          rLegX = -1.38;
+          rShinX = 1.34 + kickR * 0.14;
+          lLegZ = -0.11;
+          rLegZ = 0.11;
+
+          lArmX = -0.36;
+          rArmX = -0.36;
+          lArmZ = -0.24; // Flared outward elbows
+          rArmZ = 0.24;
+          lForeX = -0.46 + (breath - 0.5) * 0.05;
+          rForeX = -0.46 + (breath - 0.5) * 0.05;
+          lForeZ = 0.14;
+          rForeZ = -0.14;
+          headRotX = activeHeadPitch - 0.04 + (breath - 0.5) * 0.045;
+          headRotZ = swayHead * 0.075 + talkHeadTilt;
         } else if (posture === 'cushion') {
-          // 4. FLOOR CUSHION: Cute cross-legged lotus sit with rhythmic happy upper-body sway
-          hipsY = 0.09 + talkBounce * 0.6;
+          // 4. FLOOR CUSHION: Loose cross-legged lotus sit with fluid figure-8 torso & head sway
+          hipsY = 0.09 + talkBounce * 0.65;
           hipsZ = -0.02;
-          spineRotX = -0.02 + breath * 0.02;
-          spineRotZ = sway * 0.048;
+          spineRotX = -0.02 + (breath - 0.5) * 0.035;
+          spineRotZ = swaySpine * 0.06;
 
           lLegX = -1.32;
-          lLegZ = 0.52;
+          lLegZ = -0.48;
           lLegY = 0.28;
-          lShinX = 1.54;
+          lShinX = 1.52;
 
           rLegX = -1.32;
-          rLegZ = -0.52;
+          rLegZ = 0.48;
           rLegY = -0.28;
-          rShinX = 1.54;
+          rShinX = 1.52;
 
-          lArmX = -0.28;
-          rArmX = -0.28;
-          lArmZ = 0.18;
-          rArmZ = -0.18;
-          lForeX = -0.48;
-          rForeX = -0.48;
-          headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.05;
-          headRotZ = sway * 0.065 + talkHeadTilt;
+          lArmX = -0.26;
+          rArmX = -0.26;
+          lArmZ = -0.28;
+          rArmZ = 0.28;
+          lForeX = -0.46;
+          rForeX = -0.46;
+          lForeZ = 0.12;
+          rForeZ = -0.12;
+          headRotY = activeHeadYaw + easedOsc(t * 0.75, 'quart') * 0.06;
+          headRotZ = swayHead * 0.08 + talkHeadTilt;
         } else if (posture === 'vip') {
-          // 5. VIP PANORAMIC SOFA: Cute relaxed lounge with swinging crossed foot
-          hipsY = 0.11 + talkBounce * 0.6;
+          // 5. VIP PANORAMIC SOFA: Wide arms draped along the backrest & loose swinging crossed leg
+          hipsY = 0.11 + talkBounce * 0.65;
           hipsZ = -0.06;
-          spineRotX = -0.16 + breath * 0.016;
-          spineRotZ = sway * 0.03;
+          spineRotX = -0.16 + (breath - 0.5) * 0.028;
+          spineRotZ = swaySpine * 0.038;
 
           lLegX = -1.42;
-          lShinX = 1.38;
+          lShinX = 1.36;
+          lLegZ = -0.08;
           rLegX = -1.58;
-          rLegZ = 0.18;
+          rLegZ = -0.16;
           rLegY = -0.2;
-          rShinX = 1.26 + kick * 0.09;
+          rShinX = 1.24 + kickL * 0.12;
 
           lArmX = -0.14;
-          lArmZ = 0.52;
+          lArmZ = -0.52; // Wide open left arm on backrest
           lForeX = -0.32;
           rArmX = -0.14;
-          rArmZ = -0.52;
+          rArmZ = 0.52; // Wide open right arm on backrest
           rForeX = -0.32;
-          headRotY = activeHeadYaw + Math.sin(t * 0.6) * 0.05;
-          headRotZ = sway * 0.045 + talkHeadTilt;
+          headRotY = activeHeadYaw + easedOsc(t * 0.6, 'quart') * 0.06;
+          headRotZ = swayHead * 0.058 + talkHeadTilt;
         } else if (posture === 'armchair') {
-          // 6. SUNSET READING ARMCHAIR: Cute crossed-leg pose with playful hand & foot bounce
-          hipsY = 0.11 + talkBounce * 0.6;
+          // 6. SUNSET READING ARMCHAIR: Relaxed open-armrest pose with eased foot & hand bounce
+          hipsY = 0.11 + talkBounce * 0.65;
           hipsZ = -0.05;
-          spineRotX = -0.08 + breath * 0.016;
-          spineRotZ = 0.04 + sway * 0.025;
+          spineRotX = -0.08 + (breath - 0.5) * 0.028;
+          spineRotZ = 0.035 + swaySpine * 0.035;
 
           lLegX = -1.44;
-          lLegZ = -0.05;
+          lLegZ = -0.06;
           lShinX = 1.36;
           rLegX = -1.56;
-          rLegZ = 0.12;
-          rShinX = 1.24 + kick * 0.08;
+          rLegZ = -0.12;
+          rShinX = 1.22 + kickL * 0.11;
 
-          lArmX = -0.35;
-          lArmZ = 0.08;
-          lForeX = -0.55;
-          lForeZ = -0.24;
+          lArmX = -0.34;
+          lArmZ = -0.26;
+          lForeX = -0.52;
+          lForeZ = 0.12;
 
-          rArmX = -0.46;
-          rArmZ = -0.06;
-          rForeX = -0.68 + Math.sin(t * 1.8) * 0.06;
-          rForeZ = 0.12;
-          headRotZ = -0.05 + sway * 0.045 + talkHeadTilt;
-          headRotY = activeHeadYaw + Math.sin(t * 0.8) * 0.06;
+          rArmX = -0.42;
+          rArmZ = 0.24;
+          rForeX = -0.64 + kickR * 0.075;
+          rForeZ = -0.1;
+          headRotZ = -0.04 + swayHead * 0.06 + talkHeadTilt;
+          headRotY = activeHeadYaw + easedOsc(t * 0.75, 'quart') * 0.065;
         } else if (posture === 'barstool') {
-          // 7. SKYBAR HIGH STOOL: High perch on barstool with playful dangling legs
-          hipsY = 0.12 + talkBounce * 0.6;
+          // 7. SKYBAR HIGH STOOL: Loose dangling legs with eased pendulum swing
+          hipsY = 0.12 + talkBounce * 0.65;
           hipsZ = 0.01;
-          spineRotX = 0.04 + breath * 0.018;
-          spineRotZ = sway * 0.04;
+          spineRotX = 0.04 + (breath - 0.5) * 0.03;
+          spineRotZ = swaySpine * 0.048;
 
-          lLegX = -1.18;
-          lShinX = 1.32 - kick * 0.08;
+          lLegX = -1.16;
+          lLegZ = -0.1;
+          lShinX = 1.3 + kickR * 0.1;
           rLegX = -0.78;
-          rShinX = 0.56 + kick * 0.14;
+          rLegZ = 0.1;
+          rShinX = 0.54 + kickL * 0.16;
 
-          lArmX = -0.45;
-          lArmZ = 0.14;
-          lForeX = -0.58;
-          rArmX = -0.45;
-          rArmZ = -0.14;
-          rForeX = -0.62 + Math.sin(t * 2.0) * 0.06;
-          headRotY = activeHeadYaw + Math.sin(t * 0.9) * 0.06;
-          headRotZ = sway * 0.05 + talkHeadTilt;
+          lArmX = -0.42;
+          lArmZ = -0.26;
+          lForeX = -0.56;
+          rArmX = -0.42;
+          rArmZ = 0.26;
+          rForeX = -0.6 + kickL * 0.07;
+          headRotY = activeHeadYaw + easedOsc(t * 0.85, 'quart') * 0.065;
+          headRotZ = swayHead * 0.062 + talkHeadTilt;
         }
         break;
       }
 
       case 'wave': {
-        // Enthusiastic cute double-bounce chibi wave with happy head tilt
-        const waveCycle = t * 10.5;
-        hipsY = 0.72 + Math.abs(Math.sin(t * 5.2)) * 0.032;
-        spineRotZ = -0.08 + Math.sin(t * 2.6) * 0.04;
-        rArmX = -2.42;
-        rArmZ = -0.38 + Math.sin(waveCycle) * 0.32;
-        rForeX = -0.42 + Math.cos(waveCycle) * 0.25;
-        lArmX = 0.12;
-        lArmZ = 0.24;
-        lForeX = -0.25;
-        headRotZ = -0.12 + Math.sin(waveCycle * 0.5) * 0.05;
-        headRotY = Math.sin(t * 2.5) * 0.08;
+        // LOOSE, EXPRESSIVE CHIBI WAVE WITH EASE-IN-OUT ARC & WHIPPY FOREARM FOLLOW-THROUGH
+        const wave = easedOsc(t * 8.5, 'cubic');
+        const waveFore = easedOsc(t * 8.5 - 0.65, 'cubic'); // Wrist/forearm lags behind upper arm
+        const bounce = easedBounce(t * 4.25);
+
+        hipsX = easedOsc(t * 2.1, 'cubic') * 0.035;
+        hipsY = 0.715 + bounce * 0.038;
+        spineRotZ = -0.09 + wave * 0.045;
+
+        rArmX = -2.35;
+        rArmZ = 0.42 + wave * 0.34; // Flared wide outward to the right
+        rForeX = -0.38;
+        rForeZ = 0.15 + waveFore * 0.32;
+
+        lArmX = 0.08;
+        lArmZ = -0.28; // Left arm relaxed outward
+        lForeX = -0.32;
+
+        headRotZ = -0.12 - waveFore * 0.065;
+        headRotY = easedOsc(t * 2.1, 'cubic') * 0.09;
         break;
       }
 
       case 'dance': {
-        // Cute chibi happy-bounce dance with rhythmic arm pumps and playful head bobbing
-        const beat = t * 7.8;
-        hipsY = 0.68 + Math.abs(Math.sin(beat)) * 0.08;
-        hipsRotY = Math.sin(beat) * 0.3;
-        spineRotZ = Math.sin(beat * 0.5) * 0.16;
-        spineRotX = Math.cos(beat) * 0.08;
+        // FLUID, LOOSE GROOVE DANCE WITH EASE-IN / EASE-OUT BOUNCE & OVERLAPPING JOINTS
+        const beat = t * 6.8;
+        const groove = easedOsc(beat, 'cubic');
+        const grooveDelayed = easedOsc(beat - 0.55, 'cubic');
+        const grooveHalf = easedOsc(beat * 0.5, 'cubic');
+        const bounce = easedBounce(beat * 2);
 
-        lLegX = Math.sin(beat) * 0.38;
-        rLegX = -Math.sin(beat) * 0.38;
-        lShinX = Math.max(0, Math.cos(beat) * 0.5);
-        rShinX = Math.max(0, -Math.cos(beat) * 0.5);
+        hipsX = groove * 0.065;
+        hipsY = 0.675 + bounce * 0.088;
+        hipsRotY = groove * 0.32;
+        hipsRotZ = -groove * 0.075;
 
-        lArmX = -1.45 + Math.sin(beat) * 0.68;
-        rArmX = -1.45 - Math.sin(beat) * 0.68;
-        lArmZ = 0.48 + Math.cos(beat * 0.5) * 0.26;
-        rArmZ = -0.48 - Math.cos(beat * 0.5) * 0.26;
-        lForeX = -0.65 + Math.sin(beat * 2) * 0.25;
-        rForeX = -0.65 - Math.sin(beat * 2) * 0.25;
+        spineRotZ = grooveDelayed * 0.16;
+        spineRotX = (bounce - 0.5) * 0.11;
+        spineRotY = -groove * 0.14;
 
-        headRotY = Math.sin(beat * 0.5) * 0.22;
-        headRotZ = Math.sin(beat) * 0.12;
+        lLegX = groove * 0.4;
+        rLegX = -groove * 0.4;
+        lLegZ = -0.1 - Math.max(0, -groove) * 0.12;
+        rLegZ = 0.1 + Math.max(0, groove) * 0.12;
+        lShinX = 0.12 + Math.max(0, Math.cos(beat - 0.3)) * 0.52;
+        rShinX = 0.12 + Math.max(0, -Math.cos(beat - 0.3)) * 0.52;
+
+        lArmX = -1.35 + groove * 0.68;
+        rArmX = -1.35 - groove * 0.68;
+        lArmZ = -0.48 - (grooveHalf + 1) * 0.18; // Flared outward left
+        rArmZ = 0.48 + (1 - grooveHalf) * 0.18; // Flared outward right
+        lForeX = -0.62 + grooveDelayed * 0.32;
+        rForeX = -0.62 - grooveDelayed * 0.32;
+
+        headRotY = grooveHalf * 0.24;
+        headRotZ = -grooveDelayed * 0.13;
+        headRotX = (bounce - 0.5) * 0.09;
         break;
       }
 
       case 'cheer': {
-        // Cute excited chibi jump-cheer with pumping arms
-        const pump = t * 9.5;
-        hipsY = 0.73 + Math.abs(Math.sin(pump)) * 0.075;
-        spineRotX = -0.12;
-        spineRotZ = Math.sin(pump * 0.5) * 0.06;
-        lArmX = -2.65 + Math.sin(pump) * 0.32;
-        rArmX = -2.65 - Math.sin(pump) * 0.32;
-        lArmZ = 0.36;
-        rArmZ = -0.36;
-        lForeX = -0.25;
-        rForeX = -0.25;
-        headRotX = -0.16 + Math.sin(pump) * 0.08;
-        headRotZ = Math.sin(pump * 0.5) * 0.08;
+        // JOYFUL EASE-OUT JUMP-CHEER WITH WIDE OPEN ARMS & FOLLOW-THROUGH
+        const pump = t * 8.2;
+        const bounce = easedBounce(pump);
+        const sway = easedOsc(pump * 0.5, 'cubic');
+        const armWave = easedOsc(pump - 0.4, 'cubic');
+
+        hipsX = sway * 0.035;
+        hipsY = 0.72 + bounce * 0.085;
+        spineRotX = -0.12 - bounce * 0.05;
+        spineRotZ = sway * 0.07;
+
+        lArmX = -2.55 + armWave * 0.34;
+        rArmX = -2.55 - armWave * 0.34;
+        lArmZ = -0.45 - bounce * 0.15; // Wide open V-shape!
+        rArmZ = 0.45 + bounce * 0.15;
+        lForeX = -0.28;
+        rForeX = -0.28;
+
+        lLegZ = -0.09 - bounce * 0.05;
+        rLegZ = 0.09 + bounce * 0.05;
+        lShinX = 0.1 + (1 - bounce) * 0.18;
+        rShinX = 0.1 + (1 - bounce) * 0.18;
+
+        headRotX = -0.16 + (bounce - 0.5) * 0.1;
+        headRotZ = sway * 0.09;
         break;
       }
 
       case 'laugh': {
-        // Cute chibi giggle with hands near cheeks/chest and bouncy shoulders
-        const chuckle = t * 14.5;
-        hipsY = 0.71 + Math.abs(Math.sin(chuckle * 0.5)) * 0.025;
-        spineRotX = 0.12 + Math.sin(chuckle) * 0.055;
-        spineRotZ = Math.sin(chuckle * 0.25) * 0.05;
-        lArmX = -0.75;
-        rArmX = -0.75;
-        lArmZ = 0.18;
-        rArmZ = -0.18;
-        lForeX = -1.15;
-        rForeX = -1.15;
-        headRotX = -0.1 + Math.sin(chuckle) * 0.075;
-        headRotZ = Math.sin(chuckle * 0.25) * 0.07;
+        // LOOSE CHIBI GIGGLE WITH BOUNCY SHOULDERS & EASE-IN-OUT SWAY
+        const chuckle = t * 12.5;
+        const bounce = easedBounce(chuckle);
+        const sway = easedOsc(t * 2.8, 'cubic');
+
+        hipsX = sway * 0.028;
+        hipsY = 0.705 + bounce * 0.032;
+        spineRotX = 0.11 + (bounce - 0.5) * 0.07;
+        spineRotZ = sway * 0.065;
+
+        lArmX = -0.78;
+        rArmX = -0.78;
+        lArmZ = -0.26; // Elbows comfortably open
+        rArmZ = 0.26;
+        lForeX = -1.12 + (bounce - 0.5) * 0.14;
+        rForeX = -1.12 + (bounce - 0.5) * 0.14;
+        lForeZ = 0.28;
+        rForeZ = -0.28;
+
+        headRotX = -0.09 + (bounce - 0.5) * 0.09;
+        headRotZ = sway * 0.085;
         break;
       }
     }
 
-    // Smooth Damping for all joints
-    hips.position.y = THREE.MathUtils.damp(hips.position.y, hipsY, dampSpeed, dt);
-    hips.position.z = THREE.MathUtils.damp(hips.position.z, hipsZ, dampSpeed, dt);
-    hips.rotation.x = THREE.MathUtils.damp(hips.rotation.x, hipsRotX, dampSpeed, dt);
-    hips.rotation.y = THREE.MathUtils.damp(hips.rotation.y, hipsRotY, dampSpeed, dt);
+    // Staggered Ease-Out Damping Speeds down the kinematic chain for natural follow-through:
+    // Hips lead -> Spine follows -> Upper limbs follow -> Forearms/Shins & Head settle softly last
+    const hipsDamp = 9.5;
+    const spineDamp = 7.8;
+    const limbDamp = 9.0;
+    const secondaryDamp = 6.2;
+    const headDamp = 6.5;
 
-    spine.rotation.x = THREE.MathUtils.damp(spine.rotation.x, spineRotX, dampSpeed, dt);
-    spine.rotation.z = THREE.MathUtils.damp(spine.rotation.z, spineRotZ, dampSpeed, dt);
+    hips.position.x = THREE.MathUtils.damp(hips.position.x, hipsX, hipsDamp, dt);
+    hips.position.y = THREE.MathUtils.damp(hips.position.y, hipsY, hipsDamp, dt);
+    hips.position.z = THREE.MathUtils.damp(hips.position.z, hipsZ, hipsDamp, dt);
+    hips.rotation.x = THREE.MathUtils.damp(hips.rotation.x, hipsRotX, hipsDamp, dt);
+    hips.rotation.y = THREE.MathUtils.damp(hips.rotation.y, hipsRotY, hipsDamp, dt);
+    hips.rotation.z = THREE.MathUtils.damp(hips.rotation.z, hipsRotZ, hipsDamp, dt);
 
-    head.rotation.y = THREE.MathUtils.damp(head.rotation.y, headRotY, dampSpeed, dt);
-    head.rotation.x = THREE.MathUtils.damp(head.rotation.x, headRotX, dampSpeed, dt);
-    head.rotation.z = THREE.MathUtils.damp(head.rotation.z, headRotZ, dampSpeed, dt);
+    spine.rotation.x = THREE.MathUtils.damp(spine.rotation.x, spineRotX, spineDamp, dt);
+    spine.rotation.y = THREE.MathUtils.damp(spine.rotation.y, spineRotY, spineDamp, dt);
+    spine.rotation.z = THREE.MathUtils.damp(spine.rotation.z, spineRotZ, spineDamp, dt);
 
-    lArm.rotation.x = THREE.MathUtils.damp(lArm.rotation.x, lArmX, dampSpeed, dt);
-    lArm.rotation.z = THREE.MathUtils.damp(lArm.rotation.z, lArmZ, dampSpeed, dt);
-    lFore.rotation.x = THREE.MathUtils.damp(lFore.rotation.x, lForeX, dampSpeed, dt);
-    lFore.rotation.z = THREE.MathUtils.damp(lFore.rotation.z, lForeZ, dampSpeed, dt);
+    head.rotation.y = THREE.MathUtils.damp(head.rotation.y, headRotY, headDamp, dt);
+    head.rotation.x = THREE.MathUtils.damp(head.rotation.x, headRotX, headDamp, dt);
+    head.rotation.z = THREE.MathUtils.damp(head.rotation.z, headRotZ, headDamp, dt);
 
-    rArm.rotation.x = THREE.MathUtils.damp(rArm.rotation.x, rArmX, dampSpeed, dt);
-    rArm.rotation.z = THREE.MathUtils.damp(rArm.rotation.z, rArmZ, dampSpeed, dt);
-    rFore.rotation.x = THREE.MathUtils.damp(rFore.rotation.x, rForeX, dampSpeed, dt);
-    rFore.rotation.z = THREE.MathUtils.damp(rFore.rotation.z, rForeZ, dampSpeed, dt);
+    lArm.rotation.x = THREE.MathUtils.damp(lArm.rotation.x, lArmX, limbDamp, dt);
+    lArm.rotation.z = THREE.MathUtils.damp(lArm.rotation.z, lArmZ, limbDamp, dt);
+    lFore.rotation.x = THREE.MathUtils.damp(lFore.rotation.x, lForeX, secondaryDamp, dt);
+    lFore.rotation.z = THREE.MathUtils.damp(lFore.rotation.z, lForeZ, secondaryDamp, dt);
 
-    lLeg.rotation.x = THREE.MathUtils.damp(lLeg.rotation.x, lLegX, dampSpeed, dt);
-    lLeg.rotation.y = THREE.MathUtils.damp(lLeg.rotation.y, lLegY, dampSpeed, dt);
-    lLeg.rotation.z = THREE.MathUtils.damp(lLeg.rotation.z, lLegZ, dampSpeed, dt);
-    lShin.rotation.x = THREE.MathUtils.damp(lShin.rotation.x, lShinX, dampSpeed, dt);
+    rArm.rotation.x = THREE.MathUtils.damp(rArm.rotation.x, rArmX, limbDamp, dt);
+    rArm.rotation.z = THREE.MathUtils.damp(rArm.rotation.z, rArmZ, limbDamp, dt);
+    rFore.rotation.x = THREE.MathUtils.damp(rFore.rotation.x, rForeX, secondaryDamp, dt);
+    rFore.rotation.z = THREE.MathUtils.damp(rFore.rotation.z, rForeZ, secondaryDamp, dt);
 
-    rLeg.rotation.x = THREE.MathUtils.damp(rLeg.rotation.x, rLegX, dampSpeed, dt);
-    rLeg.rotation.y = THREE.MathUtils.damp(rLeg.rotation.y, rLegY, dampSpeed, dt);
-    rLeg.rotation.z = THREE.MathUtils.damp(rLeg.rotation.z, rLegZ, dampSpeed, dt);
-    rShin.rotation.x = THREE.MathUtils.damp(rShin.rotation.x, rShinX, dampSpeed, dt);
+    lLeg.rotation.x = THREE.MathUtils.damp(lLeg.rotation.x, lLegX, limbDamp, dt);
+    lLeg.rotation.y = THREE.MathUtils.damp(lLeg.rotation.y, lLegY, limbDamp, dt);
+    lLeg.rotation.z = THREE.MathUtils.damp(lLeg.rotation.z, lLegZ, limbDamp, dt);
+    lShin.rotation.x = THREE.MathUtils.damp(lShin.rotation.x, lShinX, secondaryDamp, dt);
+
+    rLeg.rotation.x = THREE.MathUtils.damp(rLeg.rotation.x, rLegX, limbDamp, dt);
+    rLeg.rotation.y = THREE.MathUtils.damp(rLeg.rotation.y, rLegY, limbDamp, dt);
+    rLeg.rotation.z = THREE.MathUtils.damp(rLeg.rotation.z, rLegZ, limbDamp, dt);
+    rShin.rotation.x = THREE.MathUtils.damp(rShin.rotation.x, rShinX, secondaryDamp, dt);
 
     // Smoothly drape skirt over thighs when seated so it never sticks vertically into cushions
     if (skirtRef.current) {
@@ -641,10 +799,10 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       const targetSkirtZ = activeAnim === 'sit' ? 0.095 : 0;
       const targetSkirtRotX = activeAnim === 'sit' ? -0.82 : 0;
       const targetSkirtScaleY = activeAnim === 'sit' ? 0.68 : 1.0;
-      skirtRef.current.position.y = THREE.MathUtils.damp(skirtRef.current.position.y, targetSkirtY, dampSpeed, dt);
-      skirtRef.current.position.z = THREE.MathUtils.damp(skirtRef.current.position.z, targetSkirtZ, dampSpeed, dt);
-      skirtRef.current.rotation.x = THREE.MathUtils.damp(skirtRef.current.rotation.x, targetSkirtRotX, dampSpeed, dt);
-      skirtRef.current.scale.y = THREE.MathUtils.damp(skirtRef.current.scale.y, targetSkirtScaleY, dampSpeed, dt);
+      skirtRef.current.position.y = THREE.MathUtils.damp(skirtRef.current.position.y, targetSkirtY, spineDamp, dt);
+      skirtRef.current.position.z = THREE.MathUtils.damp(skirtRef.current.position.z, targetSkirtZ, spineDamp, dt);
+      skirtRef.current.rotation.x = THREE.MathUtils.damp(skirtRef.current.rotation.x, targetSkirtRotX, spineDamp, dt);
+      skirtRef.current.scale.y = THREE.MathUtils.damp(skirtRef.current.scale.y, targetSkirtScaleY, spineDamp, dt);
     }
 
     // Keep overhead label & bubble anchored cleanly above the head whether standing or seated
@@ -1006,20 +1164,20 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               )}
             </group>
 
-            {/* Eyebrows (Always cleanly visible below the hairline!) */}
+            {/* Eyebrows (Horizontal soft arcs cleanly visible below the hairline!) */}
             <mesh
               material={materials.hair}
               position={[-0.085, 0.088, 0.21]}
-              rotation={[0, -0.2, isFeminine ? 0.16 : 0.1]}
+              rotation={[0, -0.2, Math.PI / 2 + (isFeminine ? 0.12 : 0.08)]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.04, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.008, 0.038, 4, 8]} />
             </mesh>
             <mesh
               material={materials.hair}
               position={[0.085, 0.088, 0.21]}
-              rotation={[0, 0.2, isFeminine ? -0.16 : -0.1]}
+              rotation={[0, 0.2, Math.PI / 2 - (isFeminine ? 0.12 : 0.08)]}
             >
-              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.0085, 0.04, 4, 8]} />
+              <capsuleGeometry args={[isFeminine ? 0.0065 : 0.008, 0.038, 4, 8]} />
             </mesh>
 
             {/* Cute Happy Cat-Arch Smile */}
@@ -1585,7 +1743,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
           </group>
 
           {/* LEFT ARM */}
-          <group ref={leftArmRef} position={[isFeminine ? -0.235 : -0.26, 0.42, 0]}>
+          <group ref={leftArmRef} position={[isFeminine ? -0.252 : -0.278, 0.42, 0]}>
             <mesh
               castShadow
               material={
@@ -1624,7 +1782,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
           </group>
 
           {/* RIGHT ARM */}
-          <group ref={rightArmRef} position={[isFeminine ? 0.235 : 0.26, 0.42, 0]}>
+          <group ref={rightArmRef} position={[isFeminine ? 0.252 : 0.278, 0.42, 0]}>
             <mesh
               castShadow
               material={
@@ -1664,7 +1822,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         </group>
 
         {/* LEFT LEG */}
-        <group ref={leftLegRef} position={[-0.092, -0.04, 0]}>
+        <group ref={leftLegRef} position={[-0.114, -0.04, 0]}>
           <mesh
             castShadow
             material={hasSkirt ? materials.skin : materials.secondary}
@@ -1710,7 +1868,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         </group>
 
         {/* RIGHT LEG */}
-        <group ref={rightLegRef} position={[0.092, -0.04, 0]}>
+        <group ref={rightLegRef} position={[0.114, -0.04, 0]}>
           <mesh
             castShadow
             material={hasSkirt ? materials.skin : materials.secondary}
